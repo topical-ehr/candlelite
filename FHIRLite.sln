@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30114.105
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FHIRLite.Core", "FHIRLite.Core\FHIRLite.Core.fsproj", "{665EA0B1-C239-4685-A041-B981BA789028}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FHIRLite.Tests", "FHIRLite.Tests\FHIRLite.Tests.fsproj", "{A131B163-2BC4-4FBF-B648-D3CEC339E1F6}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FHIRLite.DotNet.JSON", "FHIRLite.DotNet.JSON\FHIRLite.DotNet.JSON.fsproj", "{52040E07-2DC3-498C-A946-C677BB12E057}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FHIRLite.DotNet.Sqlite", "FHIRLite.DotNet.Sqlite\FHIRLite.DotNet.Sqlite.fsproj", "{0E381E85-C930-45CE-90F2-4E5B37320A7A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FHIRLite.DotNet.Server", "FHIRLite.DotNet.Server\FHIRLite.DotNet.Server.csproj", "{ECA390BE-CF72-4B35-BE3E-05074E549D10}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{665EA0B1-C239-4685-A041-B981BA789028}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{665EA0B1-C239-4685-A041-B981BA789028}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{665EA0B1-C239-4685-A041-B981BA789028}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{665EA0B1-C239-4685-A041-B981BA789028}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A131B163-2BC4-4FBF-B648-D3CEC339E1F6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A131B163-2BC4-4FBF-B648-D3CEC339E1F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A131B163-2BC4-4FBF-B648-D3CEC339E1F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A131B163-2BC4-4FBF-B648-D3CEC339E1F6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{52040E07-2DC3-498C-A946-C677BB12E057}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{52040E07-2DC3-498C-A946-C677BB12E057}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{52040E07-2DC3-498C-A946-C677BB12E057}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{52040E07-2DC3-498C-A946-C677BB12E057}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0E381E85-C930-45CE-90F2-4E5B37320A7A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0E381E85-C930-45CE-90F2-4E5B37320A7A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0E381E85-C930-45CE-90F2-4E5B37320A7A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0E381E85-C930-45CE-90F2-4E5B37320A7A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ECA390BE-CF72-4B35-BE3E-05074E549D10}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ECA390BE-CF72-4B35-BE3E-05074E549D10}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ECA390BE-CF72-4B35-BE3E-05074E549D10}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ECA390BE-CF72-4B35-BE3E-05074E549D10}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
