@@ -85,24 +85,30 @@ type GeneratedSQL =
     }
 
 module IndexConditions =
-    let _id (id: TypeId) =
+    let columnEqual column _type name value =
         [
             {
                 Column = "name"
-                Condition = Equal(StringValue "_id")
+                Condition = Equal(StringValue(_type + "." + name))
             }
             {
-                Column = "value"
-                Condition = Equal(StringValue id.TypeId)
+                Column = column
+                Condition = Equal(StringValue value)
             }
         ]
 
-let indexSubquery conditions =
+    let valueEqual = columnEqual "value"
+    let systemEqual = columnEqual "system"
+
+    let _id (id: TypeId) =
+        valueEqual "_id" id.Type id.TypeId
+
+let indexSubquery condition =
     InSubquery
         {
             Columns = [ "versionId" ]
             From = Table.Idx
-            Where = conditions
+            Where = condition
         }
 
 
@@ -114,7 +120,22 @@ let indexQuery conditions =
             Where = conditions
         }
 
-let readResourceViaIndex conditions =
+let readResourcesViaIndex conditions =
+    Select
+        {
+            Columns = [ "json" ]
+            From = Table.Versions
+            Where =
+                [
+                    for condition in conditions do
+                        {
+                            Column = "versionId"
+                            Condition = indexSubquery condition
+                        }
+                ]
+        }
+
+let readVersion versionId =
     Select
         {
             Columns = [ "json" ]
@@ -123,11 +144,9 @@ let readResourceViaIndex conditions =
                 [
                     {
                         Column = "versionId"
-                        Condition = indexSubquery conditions
+                        Condition = Equal <| StringValue versionId
                     }
-
                 ]
-
         }
 
 let updateCounter name =
@@ -169,10 +188,23 @@ let insertResourceVersion (id: TypeId) (meta: JSON.MetaInfo) (json: string) =
         Insert
             {
                 Table = Table.Versions
-                Columns = [ "versionId"; "type"; "id"; "lastUpdated"; "json" ]
+                Columns =
+                    [
+                        "versionId"
+                        "type"
+                        "id"
+                        "lastUpdated"
+                        "json"
+                    ]
                 Values =
                     [
-                        [ meta.VersionId; id.Type; id.Id; meta.LastUpdated; json ]
+                        [
+                            meta.VersionId
+                            id.Type
+                            id.Id
+                            meta.LastUpdated
+                            json
+                        ]
 
                     ]
                 Returning = []

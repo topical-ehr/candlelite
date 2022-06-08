@@ -4,6 +4,7 @@ open FHIRLite.Core.Types
 open FHIRLite.Core.SQL
 
 type IndexedValues =
+    | Id of string
     | Number of decimal
     | Reference of TypeId
     | DateTime of string
@@ -22,8 +23,9 @@ type IndexedValues =
                 box str
 
         match this with
+        | Id _id -> box _id, null
         | Number n -> box n, null
-        | Reference ref -> box ref.TypeId, ref.Type
+        | Reference ref -> box ref.TypeId, null
         | DateTime str -> boxOrNull str, null
         | String str -> boxOrNull <| normalise str, null
         | Bool b -> box (if b then "true" else "false"), null
@@ -46,7 +48,7 @@ let indexStrings path =
 let indexDateTime path =
     indexer <| fun elt -> [ elt.GetString path |> DateTime ]
 
-let indexId = indexer <| fun elt -> [ Reference <| JSON.resourceId elt ]
+let indexId = "_id", indexer <| fun elt -> [ Id <| (JSON.resourceId elt).Id ]
 
 let getElements path (elt: JSON.IJsonElement) =
     elt.GetElements path
@@ -115,7 +117,7 @@ let indexTrueOrDateExists path =
                     [ Bool((elt.GetString pathDate) <> "") ]
     }
 
-let indexContactPoints path filterForSystem =
+let contactPoints path filterForSystem =
     let filter =
         match filterForSystem with
         | None -> id
@@ -147,7 +149,7 @@ let indexAddress path =
                 |> List.map String
     }
 
-let indexHumanName path =
+let humanName path =
     {
         Indexer =
             fun elt ->
@@ -164,11 +166,7 @@ let indexHumanName path =
 
 let parameters =
     [
-        "ALL",
-        [
-            "_id", indexId
-            "_lastUpdated", indexDateTime [ "meta"; "lastUpdated" ]
-        ]
+        "ALL", [ indexId ]
 
         "Patient",
         [
@@ -180,14 +178,14 @@ let parameters =
             "death-date", indexDateTime [ "deceasedDateTime" ]
             "deceased", indexTrueOrDateExists "deceased"
 
-            "email", indexContactPoints [ "telecom" ] (Some "email")
-            "phone", indexContactPoints [ "telecom" ] (Some "phone")
-            "telecom", indexContactPoints [ "telecom" ] None
+            "email", contactPoints [ "telecom" ] (Some "email")
+            "phone", contactPoints [ "telecom" ] (Some "phone")
+            "telecom", contactPoints [ "telecom" ] None
             "address", indexAddress [ "address" ]
 
             "given", indexStrings [ "name"; "given" ]
             "family", indexStrings [ "name"; "family" ]
-            "name", indexHumanName [ "name" ]
+            "name", humanName [ "name" ]
         ]
 
         "Condition",
@@ -252,7 +250,8 @@ let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (_typ
                 Values =
                     [
                         for name, rows in allRows do
-                            let boxedName = box name
+                            let indexName = _type + "." + name
+                            let boxedName = box indexName
 
                             let uniqueRows = rows |> Set.ofList |> Set.toArray
 

@@ -102,26 +102,35 @@ type FHIRLiteServer(deps: IServerDependencies) =
     let nextVersionId () =
         nextCounter "versionId"
 
-    let read _type _id req =
-        let id = { Type = _type; Id = _id }
+    let respondWithSingleResource expectedId (results: obj array list) =
+        match results.Length with
+        | 0 -> respondWith 404 "not found"
+        | 1 ->
+            let json = results[0][0] |> string
+            let resource = deps.ParseJSON json
 
-        let results = SQL.readResourceViaIndex (SQL.IndexConditions._id id) |> runQuery
+            let idFromResource = JSON.resourceId resource
 
-        let reply =
-            match results.Length with
-            | 0 -> respondWith 404 "not found"
-            | 1 ->
-                let json = results[0][0] |> string
-                let resource = deps.ParseJSON json
+            if idFromResource <> expectedId then
+                respondWith 404 "version corresponds to a different resource"
+            else
                 json |> respondWith 200 |> addETagAndLastUpdated resource
-            | _ -> failwithf "multiple entries!"
+        | _ -> failwithf "multiple entries!"
 
-        reply
+    let read _type _id req =
+        let id = TypeId.From _type _id
+
+        SQL.readResourcesViaIndex [ (SQL.IndexConditions._id id) ]
+        |> runQuery
+        |> respondWithSingleResource id
 
     let vread _type _id versionId req =
-        failwithf "not implemented"
+        let id = TypeId.From _type _id
+
+        SQL.readVersion versionId |> runQuery |> respondWithSingleResource id
 
     let historyForId _type _id req =
+        let id = TypeId.From _type _id
         failwithf "not implemented"
 
     let historyForType _type req =
@@ -130,7 +139,19 @@ type FHIRLiteServer(deps: IServerDependencies) =
     let historyForServer req =
         failwithf "not implemented"
 
+    let searchParams (req: Request) = req.URL.Parameters
+
     let search _type req =
+        let pr = searchParams req
+
+        let conditions =
+            [
+                for p in pr do
+                    SQL.IndexConditions.valueEqual _type p.Name p.Value
+            ]
+            |> SQL.readResourcesViaIndex
+            |> runQuery
+
         failwithf "not implemented"
 
     let respondAsClientPrefers status (req: Request) (body: string) =
@@ -171,7 +192,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
         *)
         match req.URL.PathSegments with
         | [| _type; _id |] ->
-            let id = TypeId.From(_type, _id)
+            let id = TypeId.From _type _id
 
             match req.Body with
             | None -> respondWith 400 "not JSON body in PUT (update) request"
@@ -288,7 +309,12 @@ type FHIRLiteServer(deps: IServerDependencies) =
             | "PUT" -> this.PUT(req)
             | _ -> respondWith 405 "method not allowed"
 
-        for v, name in [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
+        for v, name in
+            [
+                res.ETag, "ETag"
+                res.Location, "Location"
+                res.LastUpdated, "Last-Modified"
+            ] do
             v |> Option.iter (fun v -> setHeader.Invoke(name, v))
 
         res
