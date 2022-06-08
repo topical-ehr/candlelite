@@ -5,17 +5,29 @@ open FHIRLite.Core.SQL
 
 type IndexedValues =
     | Number of decimal
-    | Reference of IdValue
+    | Reference of TypeId
+    | DateTime of string
     | String of string
     | Bool of bool
     | Token of TokenValue
     member this.ToValueAndSystem() =
+
+        let normalise (str: string) =
+            str.Trim().ToLower()
+
+        let boxOrNull str =
+            if System.String.IsNullOrEmpty str then
+                null // will not be indexed
+            else
+                box str
+
         match this with
-        | Number n -> box n, None
-        | Reference ref -> box ref.Id, Some ref.Type
-        | String str -> box str, None
-        | Bool b -> box (if b then "true" else "false"), None
-        | Token t -> box t.Code, Some t.System
+        | Number n -> box n, null
+        | Reference ref -> box ref.TypeId, ref.Type
+        | DateTime str -> boxOrNull str, null
+        | String str -> boxOrNull <| normalise str, null
+        | Bool b -> box (if b then "true" else "false"), null
+        | Token t -> boxOrNull t.Code, t.System
 
 
 type SearchParameter =
@@ -28,13 +40,13 @@ let indexer func = { Indexer = func }
 let indexString path =
     indexer <| fun elt -> [ elt.GetString path |> String ]
 
-let indexId =
-    indexer
-    <| fun elt ->
-        [
-            ([ [ "resourceType" ]; [ "id" ] ] |> List.map elt.GetString |> String.concat "/")
-            |> String
-        ]
+let indexStrings path =
+    indexer <| fun elt -> elt.GetStrings path |> List.map String
+
+let indexDateTime path =
+    indexer <| fun elt -> [ elt.GetString path |> DateTime ]
+
+let indexId = indexer <| fun elt -> [ Reference <| JSON.resourceId elt ]
 
 let getElements path (elt: JSON.IJsonElement) =
     elt.GetElements path
@@ -43,7 +55,11 @@ let getString path (elt: JSON.IJsonElement) =
     elt.GetString path |> String
 
 let getSystemValue (elt: JSON.IJsonElement) =
-    elt.GetString [ "system" ] + "|" + elt.GetString [ "value" ] |> String
+    Token
+        {
+            System = elt.GetString [ "system" ]
+            Code = elt.GetString [ "value" ]
+        }
 
 let getSystemCode (elt: JSON.IJsonElement) =
     elt.GetString [ "system" ] + "|" + elt.GetString [ "code" ] |> String
@@ -86,7 +102,6 @@ let indexBool path =
 
 let indexTrueOrDateExists path =
     let pathBool = [ (path + "Boolean") ]
-
     let pathDate = [ (path + "DateTime") ]
 
     {
@@ -152,7 +167,7 @@ let parameters =
         "ALL",
         [
             "_id", indexId
-            "_lastUpdated", indexString [ "meta"; "lastUpdated" ]
+            "_lastUpdated", indexDateTime [ "meta"; "lastUpdated" ]
         ]
 
         "Patient",
@@ -162,7 +177,7 @@ let parameters =
             "active", indexBool [ "active" ]
             "birthdate", indexString [ "birthDate" ]
             "gender", indexString [ "gender" ]
-            "death-date", indexString [ "deceasedDateTime" ]
+            "death-date", indexDateTime [ "deceasedDateTime" ]
             "deceased", indexTrueOrDateExists "deceased"
 
             "email", indexContactPoints [ "telecom" ] (Some "email")
@@ -170,14 +185,8 @@ let parameters =
             "telecom", indexContactPoints [ "telecom" ] None
             "address", indexAddress [ "address" ]
 
-            "given",
-            indexElementStrings [ "name" ] [
-                "given"
-            ]
-            "family",
-            indexElementString [ "name" ] [
-                "family"
-            ]
+            "given", indexStrings [ "name"; "given" ]
+            "family", indexStrings [ "name"; "family" ]
             "name", indexHumanName [ "name" ]
         ]
 
@@ -245,9 +254,13 @@ let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (_typ
                         for name, rows in allRows do
                             let boxedName = box name
 
-                            for indexRow in rows do
+                            let uniqueRows = rows |> Set.ofList |> Set.toArray
+
+                            for indexRow in uniqueRows do
                                 let (v, sys) = indexRow.ToValueAndSystem()
-                                [ boxedName; v; sys; versionId ]
+
+                                if v <> null then
+                                    [ boxedName; v; sys; versionId ]
 
                     ]
                 Returning = []

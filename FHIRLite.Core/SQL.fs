@@ -85,7 +85,7 @@ type GeneratedSQL =
     }
 
 module IndexConditions =
-    let _id (id: IdValue) =
+    let _id (id: TypeId) =
         [
             {
                 Column = "name"
@@ -93,7 +93,7 @@ module IndexConditions =
             }
             {
                 Column = "value"
-                Condition = Equal(StringValue id.RefString)
+                Condition = Equal(StringValue id.TypeId)
             }
         ]
 
@@ -164,31 +164,15 @@ let insertCounter name =
             Returning = [ "value" ]
         }
 
-
-
-
-let insertResourceVersion (id: IdValue) (meta: JSON.MetaInfo) (json: string) =
+let insertResourceVersion (id: TypeId) (meta: JSON.MetaInfo) (json: string) =
     let sql =
         Insert
             {
                 Table = Table.Versions
-                Columns =
-                    [
-                        "versionId"
-                        "type"
-                        "id"
-                        "lastUpdated"
-                        "json"
-                    ]
+                Columns = [ "versionId"; "type"; "id"; "lastUpdated"; "json" ]
                 Values =
                     [
-                        [
-                            meta.VersionId
-                            id.Type
-                            id.Id
-                            meta.LastUpdated
-                            json
-                        ]
+                        [ meta.VersionId; id.Type; id.Id; meta.LastUpdated; json ]
 
                     ]
                 Returning = []

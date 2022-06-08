@@ -1,18 +1,13 @@
-using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Extensions;
 
+// Initialise FHIRLight
 var deps = new FHIRLite.DotNet.Sqlite.SqliteImpl();
 var fhirServer = new FHIRLite.Core.Server.FHIRLiteServer(deps);
 
-
-// server.PUT(new FHIRLite.Core.Server.Request()
-
-
+// Start HTTP server using the .NET 6 "Minimal API" (https://docs.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis?view=aspnetcore-6.0)
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
-
 app.MapGet("/", () => "Hello World!");
-
 app.MapMethods(
     "/fhir/{*path}",
     new[] { "GET", "POST", "PUT" },
@@ -22,13 +17,11 @@ app.MapMethods(
         var prefix = "/fhir/";
 
         var bodyString = await new StreamReader(req.Body).ReadToEndAsync();
-        var bodyNode = JsonNode.Parse(bodyString);
-        var body = new FHIRLite.DotNet.JsonViaJsonNode.JsonViaJsonNode(bodyNode);
 
-        var response = fhirServer.HTTP(
+        var response = fhirServer.DoHTTP(
             req.Method.ToString(),
             url[prefix.Length..],
-            body,
+            bodyString,
             header => req.Headers[header].ToString(),
             (header, value) => res.Headers[header] = value
         );
@@ -36,7 +29,6 @@ app.MapMethods(
         res.StatusCode = response.Status;
 
         return Results.Text(response.Body, "application/json");
-
     }
 );
 

@@ -38,15 +38,18 @@ type SqliteImpl() =
                 printfn "SQL: %s" sql.SQL
 
                 for name, value in sql.Parameters do
-                    cmd.Parameters.AddWithValue(name, value) |> ignore
-                    printfn "  %s -> %A" name value
+                    let withDbNull = if value <> null then value else System.DBNull.Value
+                    cmd.Parameters.AddWithValue(name, withDbNull) |> ignore
+                    printfn "  %s -> %A" name withDbNull
 
                 use reader = cmd.ExecuteReader()
+                printfn "  rows=%A affected=%d" reader.HasRows reader.RecordsAffected
 
                 let values = Array.create reader.FieldCount null
 
                 while reader.Read() do
                     reader.GetValues values |> ignore
+                    printfn "  row: %A" values
                     yield values
             }
 

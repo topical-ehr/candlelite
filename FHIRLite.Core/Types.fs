@@ -1,11 +1,11 @@
 module FHIRLite.Core.Types
 
-type IdValue =
+type TypeId =
     {
         Type: string
         Id: string
     }
-    member this.RefString = $"{this.Type}/{this.Id}"
+    member this.TypeId = $"{this.Type}/{this.Id}"
 
     static member From(_type: string, _id: string) =
         { Type = _type; Id = _id }

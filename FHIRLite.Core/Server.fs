@@ -31,11 +31,6 @@ type Request =
         PreferReturn: PreferReturn option
     }
 
-type GetHeader = delegate of string -> string
-type SetHeader = delegate of string * string -> unit
-type SetStatus = delegate of int -> unit
-type SetBody = delegate of string -> unit
-
 type Response =
     {
         Status: int
@@ -63,15 +58,28 @@ let addETagAndLastUpdated resource response =
         LastUpdated = Some(metaInfo.LastUpdated)
     }
 
-let addLocation location response =
+let addLocation (id: TypeId) (meta: JSON.MetaInfo) response =
+    let location = $"%s{id.Type}/%s{id.Id}/_history/%s{meta.VersionId}"
+
     { response with
         Location = Some location
     }
 
+type GetHeader = delegate of string -> string
+type SetHeader = delegate of string * string -> unit
+type SetStatus = delegate of int -> unit
+type SetBody = delegate of string -> unit
+
+[<AbstractClass>]
+type IFHIRLiteServer() =
+    // defined as an interface to prevent Fable's name mangling
+    abstract member DoHTTP: method: string * url: string * body: string * getHeader: GetHeader * setHeader: SetHeader -> Response
+
+
 type FHIRLiteServer(deps: IServerDependencies) =
 
     let runQuery = deps.RunSQL >> Seq.toList
-    let runCommands = deps.RunSQL >> ignore
+    let runCommands = deps.RunSQL >> Seq.toList >> ignore
 
     let nextCounter name =
         let results = SQL.updateCounter name |> runQuery
@@ -134,9 +142,15 @@ type FHIRLiteServer(deps: IServerDependencies) =
 
     let updateMeta (resource: JSON.IJsonElement) =
         let newVersionId = nextVersionId ()
-        let newLastUpdated = deps.CurrentDateTime.ToString("o")
+
+        let newLastUpdated =
+            deps
+                .CurrentDateTime
+                .ToUniversalTime()
+                .ToString("o")
 
         resource.SetString([ "meta"; "versionId" ], newVersionId)
+
         resource.SetString([ "meta"; "lastUpdated" ], newLastUpdated)
 
         {
@@ -157,7 +171,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
         *)
         match req.URL.PathSegments with
         | [| _type; _id |] ->
-            let id = IdValue.From(_type, _id)
+            let id = TypeId.From(_type, _id)
 
             match req.Body with
             | None -> respondWith 400 "not JSON body in PUT (update) request"
@@ -187,13 +201,11 @@ type FHIRLiteServer(deps: IServerDependencies) =
                         SQL.insertResourceVersion { Type = _type; Id = _id } meta json |> runCommands
 
                         // respond
-                        let location = $"{_type}/{_id}/_history/{meta.VersionId}"
-
                         respondAsClientPrefers 200 req json
                         |> addETagAndLastUpdated resource
-                        |> addLocation location
+                        |> addLocation id meta
 
-                    | _ -> respondWith 404 $"existing resource not found ({id.RefString})"
+                    | _ -> respondWith 404 $"existing resource not found ({id.TypeId})"
 
 
         | _ -> respondWith 400 "invalid path in URL"
@@ -224,13 +236,13 @@ type FHIRLiteServer(deps: IServerDependencies) =
             Search.indexResource deps.SearchParameters resource _type meta |> runCommands
 
             let json = resource.ToString()
+            printfn "inserting version"
             SQL.insertResourceVersion newId meta json |> runCommands
+            printfn "inserted version: %A" (SQL.insertResourceVersion newId meta json)
 
             // respond
-            let location = $"{_type}/{newId}/_history/{meta.VersionId}"
-
             (respondAsClientPrefers 201 req json |> addETagAndLastUpdated resource)
-            |> addLocation location
+            |> addLocation newId meta
 
 
     member this.GET(req: Request) =
@@ -246,7 +258,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
 
         | _ -> respondWith 400 "invalid path in URL"
 
-    member this.HTTP(method: string, url: string, body: JSON.IJsonElement, getHeader: GetHeader, setHeader: SetHeader) =
+    member this.DoHTTP(method: string, url: string, body: string, getHeader: GetHeader, setHeader: SetHeader) =
 
         let header name =
             match getHeader.Invoke(name) with
@@ -257,7 +269,11 @@ type FHIRLiteServer(deps: IServerDependencies) =
         let req =
             {
                 URL = URL.parse url
-                Body = Option.ofObj body
+                Body =
+                    if System.String.IsNullOrEmpty body then
+                        None
+                    else
+                        Some <| deps.ParseJSON body
                 IfMatch = header "if-match"
                 IfModifiedSince = None
                 IfNoneExist = None
@@ -272,12 +288,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
             | "PUT" -> this.PUT(req)
             | _ -> respondWith 405 "method not allowed"
 
-        for v, name in
-            [
-                res.ETag, "ETag"
-                res.Location, "Location"
-                res.LastUpdated, "Last-Modified"
-            ] do
+        for v, name in [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
             v |> Option.iter (fun v -> setHeader.Invoke(name, v))
 
         res
