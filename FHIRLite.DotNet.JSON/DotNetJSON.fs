@@ -1,7 +1,9 @@
 module FHIRLite.DotNet.JsonViaJsonNode
 
 open System
+open System.Text.Json
 open System.Text.Json.Nodes
+open System.Text.Json.Serialization
 
 open FHIRLite.Core
 
@@ -16,6 +18,8 @@ type JsonViaJsonNode(root: JsonNode) =
         JsonViaJsonNode node
 
     override this.ToString() = root.ToJsonString()
+
+    member _.Node = root
 
     interface JSON.IJsonElement with
 
@@ -81,7 +85,26 @@ type JsonViaJsonNode(root: JsonNode) =
 
                     node <- node.[prop]
 
+type SerializationConverter() =
+    inherit JsonConverter<JSON.IJsonElement>()
+
+    override _.Read(reader, _type, options) =
+        let node = JsonNode.Parse &reader
+        JsonViaJsonNode node
+
+    override _.Write(writer, value, options) =
+        (value :?> JsonViaJsonNode).Node.WriteTo writer
+
+
 type DotNetJSON() =
+    let opts = JsonSerializerOptions()
+    do opts.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
+    do opts.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
+    do opts.Converters.Add(SerializationConverter())
+
     interface Server.IFHIRLiteJSON with
-        member this.ParseJSON(json: string) : JSON.IJsonElement =
+        member _.ParseJSON(json: string) =
             JsonViaJsonNode.Parse json
+
+        member _.BundleToJSON bundle =
+            JsonSerializer.Serialize(bundle, opts)

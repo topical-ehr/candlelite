@@ -1,6 +1,7 @@
 module FHIRLite.Core.Server
 
 open FHIRLite.Core.Types
+open FHIRLite.Core.Bundle
 
 type IFHIRLiteDB =
     // Run SQL on an instance of sqlite or perhaps soon some other DBMS
@@ -9,6 +10,8 @@ type IFHIRLiteDB =
 type IFHIRLiteJSON =
     // JSON can be parsed using platform libs (e.g. System.Text.Json or JSON.parse)
     abstract member ParseJSON: json: string -> JSON.IJsonElement
+
+    abstract member BundleToJSON: bundle: Bundle -> string
 
 type IFHIRLiteConfig =
     // allow customisation of parameters
@@ -64,7 +67,7 @@ let addLocation (id: TypeId) (meta: JSON.MetaInfo) response =
     let location = $"%s{id.Type}/%s{id.Id}/_history/%s{meta.VersionId}"
 
     { response with
-        Location = Some location
+        Response.Location = Some location
     }
 
 type GetHeader = delegate of string -> string
@@ -82,6 +85,12 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
     let runQuery = dbImpl.RunSQL >> Seq.toList
     let runCommands = dbImpl.RunSQL >> Seq.toList >> ignore
+
+    let currentTimestamp () =
+        config
+            .CurrentDateTime
+            .ToUniversalTime()
+            .ToString("o")
 
     let nextCounter name =
         let results = SQL.updateCounter name |> runQuery
@@ -110,7 +119,6 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | 1 ->
             let json = results[0][0] |> string
             let resource = jsonImpl.ParseJSON json
-
             let idFromResource = JSON.resourceId resource
 
             if idFromResource <> expectedId then
@@ -118,6 +126,31 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             else
                 json |> respondWith 200 |> addETagAndLastUpdated resource
         | _ -> failwithf "multiple entries!"
+
+    let respondWithBundle (results: obj array list) =
+        {
+            ResourceType = "Bundle"
+            Total = results.Length
+            Type = BundleType.SearchSet
+            Timestamp = currentTimestamp ()
+            Link = [||]
+            Entry =
+                [|
+                    for row in results do
+                        let json = row[0] |> string
+                        let resource = jsonImpl.ParseJSON json
+                        let idFromResource = JSON.resourceId resource
+
+                        {
+                            FullUrl = Some <| idFromResource.TypeId
+                            Resource = resource
+                            Request = None
+                            Response = None
+                        }
+                |]
+        }
+        |> jsonImpl.BundleToJSON
+        |> respondWith 200
 
     let read _type _id req =
         let id = TypeId.From _type _id
@@ -146,15 +179,37 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
     let search _type req =
         let pr = searchParams req
 
-        let conditions =
-            [
-                for p in pr do
-                    SQL.IndexConditions.valueEqual _type p.Name p.Value
-            ]
-            |> SQL.readResourcesViaIndex
-            |> runQuery
+        let addTypeCriteria (conditions: SQL.WhereCondition list list) =
+            // adds an index search clause for "WHERE name = type._id"
+            // in cases where there are no other type-specific criteria
+            // e.g. when just doing a "GET /Patient"
+            let typeDot = _type + "."
 
-        failwithf "not implemented"
+            let alreadyHas =
+                conditions
+                |> List.exists (fun clause ->
+                    clause
+                    |> List.exists (fun col ->
+                        match col.Column, col.Condition with
+                        | "name", SQL.Equal (SQL.StringValue name) -> name.StartsWith typeDot
+                        | _ -> false
+
+                    ))
+
+            if alreadyHas then
+                conditions
+            else
+                conditions @ [ SQL.IndexConditions._type _type ]
+
+        [
+            for p in pr do
+                SQL.IndexConditions.valueEqual _type p.Name p.Value
+        ]
+        |> addTypeCriteria
+        |> SQL.readResourcesViaIndex
+        |> runQuery
+        |> respondWithBundle
+
 
     let respondAsClientPrefers status (req: Request) (body: string) =
         match req.PreferReturn with
@@ -165,15 +220,9 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
     let updateMeta (resource: JSON.IJsonElement) =
         let newVersionId = nextVersionId ()
-
-        let newLastUpdated =
-            config
-                .CurrentDateTime
-                .ToUniversalTime()
-                .ToString("o")
+        let newLastUpdated = currentTimestamp ()
 
         resource.SetString([ "meta"; "versionId" ], newVersionId)
-
         resource.SetString([ "meta"; "lastUpdated" ], newLastUpdated)
 
         {
@@ -217,7 +266,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                         let meta = updateMeta resource
 
                         // store in DB
-                        Search.indexResource config.SearchParameters resource _type meta |> runCommands
+                        Search.indexResource config.SearchParameters resource id meta |> runCommands
 
                         let json = resource.ToString()
 
@@ -256,7 +305,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             let meta = updateMeta resource
 
             // store in DB
-            Search.indexResource config.SearchParameters resource _type meta |> runCommands
+            Search.indexResource config.SearchParameters resource newId meta |> runCommands
 
             let json = resource.ToString()
             printfn "inserting version"
@@ -264,7 +313,8 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             printfn "inserted version: %A" (SQL.insertResourceVersion newId meta json)
 
             // respond
-            (respondAsClientPrefers 201 req json |> addETagAndLastUpdated resource)
+            respondAsClientPrefers 201 req json
+            |> addETagAndLastUpdated resource
             |> addLocation newId meta
 
 

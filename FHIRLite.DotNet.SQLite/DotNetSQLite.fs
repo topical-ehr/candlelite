@@ -56,9 +56,8 @@ type DotNetSQLiteImpl(connectionString: string) =
                 use reader = cmd.ExecuteReader()
                 printfn "  rows=%A affected=%d" reader.HasRows reader.RecordsAffected
 
-                let values = Array.create reader.FieldCount null
-
                 while reader.Read() do
+                    let values = Array.create reader.FieldCount null
                     reader.GetValues values |> ignore
                     printfn "  row: %A" values
                     yield values

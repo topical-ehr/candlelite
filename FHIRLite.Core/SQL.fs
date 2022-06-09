@@ -13,8 +13,6 @@ module Table =
 // type Table = Table of string
 // let versionsTable = Table "versions"
 
-type Column = { Name: string; As: string }
-
 type Value =
     | StringValue of string
     | IntValue of int
@@ -85,12 +83,15 @@ type GeneratedSQL =
     }
 
 module IndexConditions =
-    let columnEqual column _type name value =
+    let private nameColumn _type name =
+        {
+            Column = "name"
+            Condition = Equal(StringValue(_type + "." + name))
+        }
+
+    let private columnEqual column _type name value =
         [
-            {
-                Column = "name"
-                Condition = Equal(StringValue(_type + "." + name))
-            }
+            nameColumn _type name
             {
                 Column = column
                 Condition = Equal(StringValue value)
@@ -102,6 +103,9 @@ module IndexConditions =
 
     let _id (id: TypeId) =
         valueEqual id.Type "_id" id.Id
+
+    let _type (_type: string) =
+        [ nameColumn _type "_id" ]
 
 let indexSubquery condition =
     InSubquery

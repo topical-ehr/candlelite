@@ -41,6 +41,7 @@ app.Run();
 
 class Config : Server.IFHIRLiteConfig
 {
+    // TODO: make more C#-friendly
     public FSharpMap<string, FSharpList<Tuple<string, Search.SearchParameter>>> SearchParameters => Search.defaultParametersMap;
 
     public DateTime CurrentDateTime => DateTime.Now;

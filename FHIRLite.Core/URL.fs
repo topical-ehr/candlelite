@@ -18,7 +18,7 @@ let parseParameters (qs: string) =
 
     ps
     |> Array.map (fun p ->
-        let nv = p.Split('=', 1)
+        let nv = p.Split("=", 2)
 
         {
             Name = nv.[0]
@@ -27,7 +27,7 @@ let parseParameters (qs: string) =
         })
 
 let parse (relativeUrl: string) =
-    let pathQS = relativeUrl.Split("?", 1)
+    let pathQS = relativeUrl.Split("?", 2)
 
     let segments = pathQS.[0].Split('/')
 

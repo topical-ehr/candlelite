@@ -221,10 +221,10 @@ let deleteIndexForVersion (versionId: string) =
                 ]
         }
 
-let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (_type: string) (meta: JSON.MetaInfo) =
+let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (id: TypeId) (meta: JSON.MetaInfo) =
 
     let paramsForType =
-        match Map.tryFind _type paramsMap with
+        match Map.tryFind id.Type paramsMap with
         | Some list -> list
         | None -> []
 
@@ -245,12 +245,13 @@ let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (_typ
                         "name"
                         "value"
                         "system"
+                        "id"
                         "versionId"
                     ]
                 Values =
                     [
                         for name, rows in allRows do
-                            let indexName = _type + "." + name
+                            let indexName = id.Type + "." + name
                             let boxedName = box indexName
 
                             let uniqueRows = rows |> Set.ofList |> Set.toArray
@@ -259,7 +260,7 @@ let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (_typ
                                 let (v, sys) = indexRow.ToValueAndSystem()
 
                                 if v <> null then
-                                    [ boxedName; v; sys; versionId ]
+                                    [ boxedName; v; sys; id.Id; versionId ]
 
                     ]
                 Returning = []

@@ -4,7 +4,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="JsonViaJsonNode.fs" />
+    <Compile Include="DotNetJSON.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FHIRLite.Core\FHIRLite.Core.fsproj" />
