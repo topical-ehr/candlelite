@@ -11,6 +11,8 @@ type IJsonElement =
 
     abstract GetElements: path: string list -> IJsonElement list
 
+    abstract WalkAndModify: func: (string -> string -> string option) -> unit
+
     abstract SetString: path: string list * value: string -> unit
 
 type MetaInfo =
@@ -33,3 +35,18 @@ let resourceId (elt: IJsonElement) =
         Type = resourceType elt
         Id = elt.GetString [ "id" ]
     }
+
+
+type HashSetOfStrings = System.Collections.Generic.HashSet<string>
+
+let allReferences (resource: IJsonElement) =
+    let set = HashSetOfStrings()
+
+    resource.WalkAndModify(fun prop value ->
+        if prop = "reference" then
+            set.Add value |> ignore
+
+        None
+    )
+
+    set

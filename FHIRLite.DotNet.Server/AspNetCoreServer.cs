@@ -33,7 +33,7 @@ app.MapMethods(
 
         res.StatusCode = response.Status;
 
-        return Results.Text(response.Body, "application/json");
+        return Results.Text(response.Body, "application/fhir+json");
     }
 );
 

@@ -5,6 +5,7 @@ type TypeId =
         Type: string
         Id: string
     }
+
     member this.TypeId = $"{this.Type}/{this.Id}"
 
     static member From (_type: string) (_id: string) =

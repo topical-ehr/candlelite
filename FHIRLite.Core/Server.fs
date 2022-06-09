@@ -78,7 +78,9 @@ type SetBody = delegate of string -> unit
 [<AbstractClass>]
 type IFHIRLiteServer() =
     // defined as an interface to prevent Fable's name mangling
-    abstract member HandleRequest: method: string * url: string * body: string * getHeader: GetHeader * setHeader: SetHeader -> Response
+    abstract member HandleRequest:
+        method: string * url: string * body: string * getHeader: GetHeader * setHeader: SetHeader ->
+            Response
 
 
 type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHIRLiteJSON) =
@@ -87,10 +89,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
     let runCommands = dbImpl.RunSQL >> Seq.toList >> ignore
 
     let currentTimestamp () =
-        config
-            .CurrentDateTime
-            .ToUniversalTime()
-            .ToString("o")
+        config.CurrentDateTime.ToUniversalTime().ToString("o")
 
     let nextCounter name =
         let results = SQL.updateCounter name |> runQuery
@@ -118,13 +117,18 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | 0 -> respondWith 404 "not found"
         | 1 ->
             let json = results[0][0] |> string
-            let resource = jsonImpl.ParseJSON json
-            let idFromResource = JSON.resourceId resource
+            let deleted = results[0][1] |> unbox<int>
 
-            if idFromResource <> expectedId then
-                respondWith 404 "version corresponds to a different resource"
+            if deleted = 1 then
+                respondWith 410 "deleted"
             else
-                json |> respondWith 200 |> addETagAndLastUpdated resource
+                let resource = jsonImpl.ParseJSON json
+                let idFromResource = JSON.resourceId resource
+
+                if idFromResource <> expectedId then
+                    respondWith 404 "version corresponds to a different resource"
+                else
+                    json |> respondWith 200 |> addETagAndLastUpdated resource
         | _ -> failwithf "multiple entries!"
 
     let respondWithBundle (results: obj array list) =
@@ -179,7 +183,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
     let search _type req =
         let pr = searchParams req
 
-        let addTypeCriteria (conditions: SQL.WhereCondition list list) =
+        let addTypeClauseIfNeeded (conditions: SQL.WhereCondition list list) =
             // adds an index search clause for "WHERE name = type._id"
             // in cases where there are no other type-specific criteria
             // e.g. when just doing a "GET /Patient"
@@ -194,7 +198,8 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                         | "name", SQL.Equal (SQL.StringValue name) -> name.StartsWith typeDot
                         | _ -> false
 
-                    ))
+                    )
+                )
 
             if alreadyHas then
                 conditions
@@ -205,7 +210,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             for p in pr do
                 SQL.IndexConditions.valueEqual _type p.Name p.Value
         ]
-        |> addTypeCriteria
+        |> addTypeClauseIfNeeded
         |> SQL.readResourcesViaIndex
         |> runQuery
         |> respondWithBundle
@@ -216,7 +221,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | None
         | Some Minimal -> respondWith status ""
         | Some Representation -> respondWith status body
-        | Some OperationOutcome -> respondWith status "TODO..."
+        | Some OperationOutcome -> invalidArg "PreferReturn" "OperationOutcome not implemented" // TODO
 
     let updateMeta (resource: JSON.IJsonElement) =
         let newVersionId = nextVersionId ()
@@ -230,7 +235,52 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             JSON.LastUpdated = newLastUpdated
         }
 
-    member this.PUT(req: Request) =
+    let checkReferencesExist references =
+        for ref in references do
+            let {
+                    URL.PathSegments = segments
+                    URL.Parameters = parameters
+                } =
+                URL.parse ref
+
+            if parameters.Length > 0 then
+                invalidArg "resource" $"reference should not have parameters (%s{ref})"
+
+            match segments with
+            | [| _type; _id |] ->
+                let id = TypeId.From _type _id
+                let rows = SQL.readIsDeletedViaIndex [ (SQL.IndexConditions._id id) ] |> runQuery
+
+                match rows with
+                | [] -> invalidArg "resource" $"reference doesn't exist (%s{ref})"
+                | [ row ] ->
+                    let deleted = unbox<bool> row[0]
+
+                    if deleted then
+                        invalidArg "resource" $"referenced resource is deleted (%s{ref})"
+                | _ -> failwithf $"multiple resources for reference (%s{ref})!"
+
+                ()
+            | _ -> invalidArg "resource" $"invalid reference (%s{ref})"
+
+    let storeResource id (resource: JSON.IJsonElement) =
+        // create and set a new versionId
+        let meta = updateMeta resource
+
+        // check references
+        let references = JSON.allReferences resource
+        checkReferencesExist references
+
+        // store index entries
+        Search.indexResource config.SearchParameters resource id meta references |> runCommands
+
+        // store json
+        let json = resource.ToString()
+        SQL.insertResourceVersion id meta json |> runCommands
+
+        meta, json
+
+    let PUT (req: Request) =
         (*
             Spec extracts:
 
@@ -262,15 +312,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                         // TODO: update unchanged index entries instead of deleting?
                         Search.deleteIndexForVersion (string existingVersionId) |> runCommands
 
-                        // create and set a new versionId
-                        let meta = updateMeta resource
-
-                        // store in DB
-                        Search.indexResource config.SearchParameters resource id meta |> runCommands
-
-                        let json = resource.ToString()
-
-                        SQL.insertResourceVersion { Type = _type; Id = _id } meta json |> runCommands
+                        let (meta, json) = storeResource id resource
 
                         // respond
                         respondAsClientPrefers 200 req json
@@ -283,7 +325,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | _ -> respondWith 400 "invalid path in URL"
 
 
-    member this.POST(req: Request) =
+    let POST (req: Request) =
         (*
             Spec extracts:
 
@@ -302,15 +344,8 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             let _type = JSON.resourceType resource
             let newId = { Type = _type; Id = nextCounter _type }
             resource.SetString([ "id" ], newId.Id)
-            let meta = updateMeta resource
 
-            // store in DB
-            Search.indexResource config.SearchParameters resource newId meta |> runCommands
-
-            let json = resource.ToString()
-            printfn "inserting version"
-            SQL.insertResourceVersion newId meta json |> runCommands
-            printfn "inserted version: %A" (SQL.insertResourceVersion newId meta json)
+            let (meta, json) = storeResource newId resource
 
             // respond
             respondAsClientPrefers 201 req json
@@ -318,7 +353,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             |> addLocation newId meta
 
 
-    member this.GET(req: Request) =
+    let GET (req: Request) =
 
         match req.URL.PathSegments with
         | [| _type; _id; "_history" |] -> historyForId _type _id req
@@ -331,7 +366,14 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
         | _ -> respondWith 400 "invalid path in URL"
 
-    member this.HandleRequest(method: string, url: string, body: string, getHeader: GetHeader, setHeader: SetHeader) =
+    member this.HandleRequest
+        (
+            method: string,
+            url: string,
+            body: string,
+            getHeader: GetHeader,
+            setHeader: SetHeader
+        ) =
 
         let header name =
             match getHeader.Invoke(name) with
@@ -348,25 +390,27 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                     else
                         Some <| jsonImpl.ParseJSON body
                 IfMatch = header "if-match"
-                IfModifiedSince = None
-                IfNoneExist = None
-                PreferReturn = None
-
+                IfModifiedSince = header "if-modified-since"
+                IfNoneExist = header "if-none-exist"
+                PreferReturn =
+                    match header "prefer" with
+                    | Some "return=minimal" -> Some Minimal
+                    | Some "return=representation" -> Some Representation
+                    | Some "return=OperationOutcome" ->
+                        invalidArg "prefer" "Prefer: OperationOutcome not yet supported"
+                    | Some _ -> invalidArg "prefer" "invalid value for Prefer header"
+                    | None -> None
             }
 
         let res =
             match method with
-            | "GET" -> this.GET(req)
-            | "POST" -> this.POST(req)
-            | "PUT" -> this.PUT(req)
+            | "GET" -> GET req
+            | "POST" -> POST req
+            | "PUT" -> PUT req
             | _ -> respondWith 405 "method not allowed"
 
         for v, name in
-            [
-                res.ETag, "ETag"
-                res.Location, "Location"
-                res.LastUpdated, "Last-Modified"
-            ] do
+            [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
             v |> Option.iter (fun v -> setHeader.Invoke(name, v))
 
         res

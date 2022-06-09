@@ -10,24 +10,27 @@ CREATE TABLE versions (
     type        TEXT NOT NULL,
     id          TEXT NOT NULL,  -- text as can be client-assigned
     lastUpdated TEXT NOT NULL,
+    deleted     TINYINT NOT NULL,
     json        TEXT NOT NULL
 );
 CREATE INDEX version_history_by_type_id ON versions (type, id);
 CREATE INDEX version_history_by_type    ON versions (type, lastUpdated);
 CREATE INDEX version_history_all        ON versions (lastUpdated);
 
-CREATE TABLE idx (
+CREATE TABLE indexes (
     name      TEXT NOT NULL,    -- index name, e.g. Patient._id
     
     value     BLOB NOT NULL,    -- includes numbers, codes, values, references
     system    BLOB,             -- includes system field for codes (optional)
+    isRef     TINYINT,          -- whether the value is a reference to another resource
 
     id        TEXT  NOT NULL,   -- resource id for chained searches
     versionId INTEGER NOT NULL  -- version id for getting the latest JSON
 );
-CREATE INDEX index_value ON idx (name, value, versionId); -- versionId included for cover
-CREATE INDEX index_system_value ON idx (name, system, value, versionId) WHERE system IS NOT NULL;
-CREATE INDEX index_versionId ON idx (versionId); -- used to delete index entries
+CREATE INDEX index_value        ON indexes (name, value, versionId); -- versionId included for cover
+CREATE INDEX index_system_value ON indexes (name, system, value, versionId) WHERE system IS NOT NULL; -- for searches including the system
+CREATE INDEX index_references   ON indexes (value) WHERE isRef = 1; -- to prevent deletion of referenced resources
+CREATE INDEX index_versionId    ON indexes (versionId); -- to delete index entries
 
 
 CREATE TABLE sequences (
@@ -54,9 +57,12 @@ let GenerateSQL (statement: Statement) =
             where
             |> List.map (fun cond ->
                 cond.Column
-                + (match cond.Condition with
-                   | Equal v -> $" = {newParam <| valueToObj v}"
-                   | InSubquery x -> $" IN ({toSQL <| Select x})"))
+                + (
+                    match cond.Condition with
+                    | Equal v -> $" = {newParam <| valueToObj v}"
+                    | InSubquery x -> $" IN ({toSQL <| Select x})"
+                )
+            )
             |> String.concat " AND "
 
 
@@ -93,15 +99,15 @@ let GenerateSQL (statement: Statement) =
                 |> List.map (fun ud ->
                     match ud.Value with
                     | Value value -> $"{ud.Column} = {newParam <| valueToObj value}"
-                    | Increment inc -> $"%s{ud.Column} = %s{ud.Column} + %d{inc}")
+                    | Increment inc -> $"%s{ud.Column} = %s{ud.Column} + %d{inc}"
+                )
                 |> String.concat ","
 
             $"UPDATE %s{Table.toString update.Table} SET %s{set} WHERE %s{convertWhere update.Where} %s{generateReturning update.Returning}"
 
     let sql = toSQL statement
 
-    let parametersList =
-        parameters |> Seq.mapi (fun i v -> paramName i, v) |> Seq.toList
+    let parametersList = parameters |> Seq.mapi (fun i v -> paramName i, v) |> Seq.toList
 
     {
         SQL = sql

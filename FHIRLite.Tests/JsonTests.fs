@@ -8,7 +8,8 @@ open FHIRLite.Core.JSON
 open FHIRLite.DotNet.JsonViaJsonNode
 
 // example from https://www.hl7.org/fhir/patient-example.json.html
-let example_patient = """
+let example_patient =
+    """
 {
   "resourceType": "Patient",
   "id": "example",
@@ -175,10 +176,8 @@ let example_patient = """
   }
 }
 """
+
 let example_patient_trimmed = JsonNode.Parse(example_patient).ToJsonString()
-
-let patient = JsonViaJsonNode.Parse example_patient :> IJsonElement
-
 
 let assertArgumentException func path =
     Assert.Throws<ArgumentException>(Action(fun () -> func path |> ignore)) |> ignore
@@ -188,44 +187,104 @@ let equalStringLists (a: string list) (b: string list) =
 
 [<Fact>]
 let ``Test GetString`` () =
+    let patient = JsonViaJsonNode.Parse example_patient :> IJsonElement
 
+    Assert.Equal(patient.GetString [ "id" ], "example")
+    Assert.Equal(patient.GetString [ "active" ], "true")
+    Assert.Equal(patient.GetString [ "doesnt_exist" ], "")
 
-    Assert.Equal(patient.GetString ["id"], "example")
-    Assert.Equal(patient.GetString ["active"], "true")
-    Assert.Equal(patient.GetString ["doesnt_exist"], "")
-    Assert.Equal(patient.GetString ["doesnt_exist"; "a"], "")
-    Assert.Equal(patient.GetString ["text"; "status"], "generated")
+    Assert.Equal(
+        patient.GetString [ "doesnt_exist"
+                            "a" ],
+        ""
+    )
 
-    assertArgumentException patient.GetString ["identifier"; "use"]
-    assertArgumentException patient.GetString ["name"; "use"]
-    assertArgumentException patient.GetString ["contact"]
-    assertArgumentException patient.GetString ["contact"; "relationship"]
+    Assert.Equal(patient.GetString [ "text"; "status" ], "generated")
+
+    assertArgumentException patient.GetString [ "identifier"; "use" ]
+    assertArgumentException patient.GetString [ "name"; "use" ]
+    assertArgumentException patient.GetString [ "contact" ]
+    assertArgumentException patient.GetString [ "contact"; "relationship" ]
 
 [<Fact>]
 let ``Test GetStrings`` () =
-    equalStringLists (patient.GetStrings ["name"; "use"]) ["official"; "usual"; "maiden"]
-    equalStringLists (patient.GetStrings ["address"; "line"]) ["534 Erewhon St"]
-    equalStringLists (patient.GetStrings ["address"; "district"]) ["Rainbow"]
-    equalStringLists (patient.GetStrings ["contact"; "address"; "district"]) ["Rainbow"]
-    equalStringLists (patient.GetStrings ["contact"; "address"; "line"]) ["534 Erewhon St"]
+    let patient = JsonViaJsonNode.Parse example_patient :> IJsonElement
 
-    equalStringLists (patient.GetStrings ["contact"; "address"; "404"]) []
-    equalStringLists (patient.GetStrings ["contact"; "404"; "404"]) []
-    equalStringLists (patient.GetStrings ["404"; "404"; "404"]) []
-    equalStringLists (patient.GetStrings ["404"]) []
+    equalStringLists (patient.GetStrings [ "name"; "use" ]) [ "official"; "usual"; "maiden" ]
+    equalStringLists (patient.GetStrings [ "address"; "line" ]) [ "534 Erewhon St" ]
+
+    equalStringLists
+        (patient.GetStrings [ "address"
+                              "district" ])
+        [ "Rainbow" ]
+
+    equalStringLists
+        (patient.GetStrings [ "contact"
+                              "address"
+                              "district" ])
+        [ "Rainbow" ]
+
+    equalStringLists
+        (patient.GetStrings [ "contact"
+                              "address"
+                              "line" ])
+        [ "534 Erewhon St" ]
+
+    equalStringLists
+        (patient.GetStrings [ "contact"
+                              "address"
+                              "404" ])
+        []
+
+    equalStringLists
+        (patient.GetStrings [ "contact"
+                              "404"
+                              "404" ])
+        []
+
+    equalStringLists
+        (patient.GetStrings [ "404"
+                              "404"
+                              "404" ])
+        []
+
+    equalStringLists (patient.GetStrings [ "404" ]) []
 
 
 [<Fact>]
 let ``Test SetString`` () =
+    let patient = JsonViaJsonNode.Parse example_patient :> IJsonElement
 
-    patient.SetString(["id"], "new-id")
+    patient.SetString([ "id" ], "new-id")
     let expected = example_patient_trimmed.Replace("example", "new-id")
     Assert.Equal(patient.ToString(), expected)
 
-    patient.SetString(["text"; "foo"], "boo")
+    patient.SetString([ "text"; "foo" ], "boo")
+
     let expected = expected.Replace("},\"identifier\"", ",\"foo\":\"boo\"},\"identifier\"")
+
     Assert.Equal(patient.ToString(), expected)
 
-    patient.SetString(["meta"; "versionId"], "123")
+    patient.SetString([ "meta"; "versionId" ], "123")
+
     let expected = expected.Substring(0, expected.Length - 1) + ""","meta":{"versionId":"123"}}"""
+
+    Assert.Equal(patient.ToString(), expected)
+
+[<Fact>]
+let ``Test walk and modify`` () =
+    let patient = JsonViaJsonNode.Parse example_patient :> IJsonElement
+
+    patient.WalkAndModify(fun prop value -> None)
+    let expected = example_patient_trimmed
+    Assert.Equal(patient.ToString(), expected)
+
+    patient.WalkAndModify(fun prop value ->
+        if prop = "reference" then
+            Some <| value + "23"
+        else
+            None
+    )
+
+    let expected = example_patient_trimmed.Replace("Organization/1", "Organization/123")
     Assert.Equal(patient.ToString(), expected)

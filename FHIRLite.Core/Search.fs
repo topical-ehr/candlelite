@@ -11,7 +11,7 @@ type IndexedValues =
     | String of string
     | Bool of bool
     | Token of TokenValue
-    member this.ToValueAndSystem() =
+    member this.ToValueAndSystemAndIsRef() =
 
         let normalise (str: string) =
             str.Trim().ToLower()
@@ -23,13 +23,13 @@ type IndexedValues =
                 box str
 
         match this with
-        | Id _id -> box _id, null
-        | Number n -> box n, null
-        | Reference ref -> box ref.TypeId, null
-        | DateTime str -> boxOrNull str, null
-        | String str -> boxOrNull <| normalise str, null
-        | Bool b -> box (if b then "true" else "false"), null
-        | Token t -> boxOrNull t.Code, t.System
+        | Id _id -> box _id, null, null
+        | Number n -> box n, null, null
+        | Reference ref -> box ref.TypeId, null, box 1
+        | DateTime str -> boxOrNull str, null, null
+        | String str -> boxOrNull <| normalise str, null, null
+        | Bool b -> box (if b then "true" else "false"), null, null
+        | Token t -> boxOrNull t.Code, t.System, null
 
 
 type SearchParameter =
@@ -95,11 +95,7 @@ let indexElementString elementPath stringPath =
 
 let indexBool path =
     {
-        Indexer =
-            fun elt ->
-                [
-                    (elt.GetString path) = "true" |> Bool
-                ]
+        Indexer = fun elt -> [ (elt.GetString path) = "true" |> Bool ]
     }
 
 let indexTrueOrDateExists path =
@@ -121,7 +117,8 @@ let contactPoints path filterForSystem =
     let filter =
         match filterForSystem with
         | None -> id
-        | Some system -> List.filter (fun (e: JSON.IJsonElement) -> (e.GetString [ "system" ]) = system)
+        | Some system ->
+            List.filter (fun (e: JSON.IJsonElement) -> (e.GetString [ "system" ]) = system)
 
     {
         Indexer =
@@ -145,7 +142,8 @@ let indexAddress path =
                         e.GetString [ "postalCode" ]
                         e.GetString [ "country" ]
                      ]
-                     @ (e.GetStrings [ "line" ])))
+                     @ (e.GetStrings [ "line" ]))
+                )
                 |> List.map String
     }
 
@@ -155,11 +153,9 @@ let humanName path =
             fun elt ->
                 elt.GetElements path
                 |> List.collect (fun e ->
-                    ([
-                        e.GetString [ "text" ]
-                        e.GetString [ "family" ]
-                     ]
-                     @ (e.GetStrings [ "given" ])))
+                    ([ e.GetString [ "text" ]; e.GetString [ "family" ] ]
+                     @ (e.GetStrings [ "given" ]))
+                )
                 |> List.map String
     }
 
@@ -211,7 +207,7 @@ let defaultParametersMap: ParametersMap = parameters |> Map.ofList
 let deleteIndexForVersion (versionId: string) =
     Delete
         {
-            Table = Table.Idx
+            Table = Table.indexes
             Where =
                 [
                     {
@@ -221,7 +217,13 @@ let deleteIndexForVersion (versionId: string) =
                 ]
         }
 
-let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (id: TypeId) (meta: JSON.MetaInfo) =
+let indexResource
+    (paramsMap: ParametersMap)
+    (resource: JSON.IJsonElement)
+    (id: TypeId)
+    (meta: JSON.MetaInfo)
+    (references: JSON.HashSetOfStrings) // NB: HashSet will be mutated!
+    =
 
     let paramsForType =
         match Map.tryFind id.Type paramsMap with
@@ -231,23 +233,15 @@ let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (id: 
     let paramsForAll = (Map.find "ALL" paramsMap)
 
     let allRows =
-        (paramsForAll @ paramsForType)
-        |> List.map (fun (name, sp) -> name, sp.Indexer resource)
+        (paramsForAll @ paramsForType) |> List.map (fun (name, sp) -> name, sp.Indexer resource)
 
     let versionId = box meta.VersionId
 
     let sql =
         Insert
             {
-                Table = Table.Idx
-                Columns =
-                    [
-                        "name"
-                        "value"
-                        "system"
-                        "id"
-                        "versionId"
-                    ]
+                Table = Table.indexes
+                Columns = [ "name"; "value"; "system"; "isRef"; "id"; "versionId" ]
                 Values =
                     [
                         for name, rows in allRows do
@@ -257,10 +251,20 @@ let indexResource (paramsMap: ParametersMap) (resource: JSON.IJsonElement) (id: 
                             let uniqueRows = rows |> Set.ofList |> Set.toArray
 
                             for indexRow in uniqueRows do
-                                let (v, sys) = indexRow.ToValueAndSystem()
+                                match indexRow with
+                                // NB: mutating references HashSet!
+                                | Reference typeId -> references.Remove typeId.TypeId |> ignore
+                                | _ -> ()
+
+                                let (v, sys, isRef) = indexRow.ToValueAndSystemAndIsRef()
 
                                 if v <> null then
-                                    [ boxedName; v; sys; id.Id; versionId ]
+                                    [ boxedName; v; sys; isRef; id.Id; versionId ]
+
+                        // add unindexed references to enforce referential integrity
+                        // (i.e. prevent deletion of the referenced resources)
+                        for ref in references do
+                            [ box "ref"; ref; null; 1; null; versionId ]
 
                     ]
                 Returning = []

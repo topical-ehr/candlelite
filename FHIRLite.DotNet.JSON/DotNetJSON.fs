@@ -23,6 +23,30 @@ type JsonViaJsonNode(root: JsonNode) =
 
     interface JSON.IJsonElement with
 
+        member this.WalkAndModify func =
+
+            let rec walk (node: JsonNode) =
+                match node with
+                | :? JsonArray as arr -> arr |> Seq.iter walk
+                | :? JsonObject as object ->
+                    object
+                    |> Seq.toArray
+                    |> Array.iter (fun pair ->
+                        match pair.Value with
+                        | :? JsonArray
+                        | :? JsonObject -> walk pair.Value
+                        | :? JsonValue as value ->
+                            match value.TryGetValue<string>() with
+                            | true, stringValue ->
+                                match func pair.Key stringValue with
+                                | Some newValue -> object[pair.Key] <- newValue
+                                | None -> ()
+                            | _ -> ()
+                        | _ -> failwithf $"unexpected type %A{pair.Value}")
+                | _ -> ()
+
+            walk root
+
         member this.GetString(path: string list) : string =
 
             let mutable node = root

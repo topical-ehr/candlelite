@@ -7,7 +7,7 @@ module Table =
     let toString (T t) = t
 
     let Versions = T "versions"
-    let Idx = T "idx"
+    let indexes = T "indexes"
     let Sequences = T "sequences"
 
 // type Table = Table of string
@@ -111,7 +111,7 @@ let indexSubquery condition =
     InSubquery
         {
             Columns = [ "versionId" ]
-            From = Table.Idx
+            From = Table.indexes
             Where = condition
         }
 
@@ -120,14 +120,14 @@ let indexQuery conditions =
     Select
         {
             Columns = [ "versionId" ]
-            From = Table.Idx
+            From = Table.indexes
             Where = conditions
         }
 
-let readResourcesViaIndex conditions =
+let readVersionsViaIndex columns conditions =
     Select
         {
-            Columns = [ "json" ]
+            Columns = columns
             From = Table.Versions
             Where =
                 [
@@ -139,10 +139,17 @@ let readResourcesViaIndex conditions =
                 ]
         }
 
+let readResourcesViaIndex conditions =
+    readVersionsViaIndex [ "json"; "deleted" ] conditions
+
+let readIsDeletedViaIndex conditions =
+    readVersionsViaIndex [ "deleted" ] conditions
+
+
 let readVersion versionId =
     Select
         {
-            Columns = [ "json" ]
+            Columns = [ "json"; "deleted" ]
             From = Table.Versions
             Where =
                 [
@@ -192,23 +199,10 @@ let insertResourceVersion (id: TypeId) (meta: JSON.MetaInfo) (json: string) =
         Insert
             {
                 Table = Table.Versions
-                Columns =
-                    [
-                        "versionId"
-                        "type"
-                        "id"
-                        "lastUpdated"
-                        "json"
-                    ]
+                Columns = [ "versionId"; "type"; "id"; "lastUpdated"; "json" ]
                 Values =
                     [
-                        [
-                            meta.VersionId
-                            id.Type
-                            id.Id
-                            meta.LastUpdated
-                            json
-                        ]
+                        [ meta.VersionId; id.Type; id.Id; meta.LastUpdated; json ]
 
                     ]
                 Returning = []
