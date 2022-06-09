@@ -101,7 +101,7 @@ module IndexConditions =
     let systemEqual = columnEqual "system"
 
     let _id (id: TypeId) =
-        valueEqual "_id" id.Type id.TypeId
+        valueEqual id.Type "_id" id.Id
 
 let indexSubquery condition =
     InSubquery

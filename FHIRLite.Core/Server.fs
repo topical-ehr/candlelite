@@ -2,13 +2,15 @@ module FHIRLite.Core.Server
 
 open FHIRLite.Core.Types
 
-type IServerDependencies =
+type IFHIRLiteDB =
+    // Run SQL on an instance of sqlite or perhaps soon some other DBMS
+    abstract member RunSQL: statement: SQL.Statement -> (obj array) seq
+
+type IFHIRLiteJSON =
     // JSON can be parsed using platform libs (e.g. System.Text.Json or JSON.parse)
     abstract member ParseJSON: json: string -> JSON.IJsonElement
 
-    // Run SQL on an imstance of sqlite or perhaps soon some other DBMS
-    abstract member RunSQL: statement: SQL.Statement -> (obj array) seq
-
+type IFHIRLiteConfig =
     // allow customisation of parameters
     abstract member SearchParameters: Search.ParametersMap
 
@@ -73,13 +75,13 @@ type SetBody = delegate of string -> unit
 [<AbstractClass>]
 type IFHIRLiteServer() =
     // defined as an interface to prevent Fable's name mangling
-    abstract member DoHTTP: method: string * url: string * body: string * getHeader: GetHeader * setHeader: SetHeader -> Response
+    abstract member HandleRequest: method: string * url: string * body: string * getHeader: GetHeader * setHeader: SetHeader -> Response
 
 
-type FHIRLiteServer(deps: IServerDependencies) =
+type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHIRLiteJSON) =
 
-    let runQuery = deps.RunSQL >> Seq.toList
-    let runCommands = deps.RunSQL >> Seq.toList >> ignore
+    let runQuery = dbImpl.RunSQL >> Seq.toList
+    let runCommands = dbImpl.RunSQL >> Seq.toList >> ignore
 
     let nextCounter name =
         let results = SQL.updateCounter name |> runQuery
@@ -107,7 +109,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
         | 0 -> respondWith 404 "not found"
         | 1 ->
             let json = results[0][0] |> string
-            let resource = deps.ParseJSON json
+            let resource = jsonImpl.ParseJSON json
 
             let idFromResource = JSON.resourceId resource
 
@@ -165,7 +167,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
         let newVersionId = nextVersionId ()
 
         let newLastUpdated =
-            deps
+            config
                 .CurrentDateTime
                 .ToUniversalTime()
                 .ToString("o")
@@ -215,7 +217,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
                         let meta = updateMeta resource
 
                         // store in DB
-                        Search.indexResource deps.SearchParameters resource _type meta |> runCommands
+                        Search.indexResource config.SearchParameters resource _type meta |> runCommands
 
                         let json = resource.ToString()
 
@@ -254,7 +256,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
             let meta = updateMeta resource
 
             // store in DB
-            Search.indexResource deps.SearchParameters resource _type meta |> runCommands
+            Search.indexResource config.SearchParameters resource _type meta |> runCommands
 
             let json = resource.ToString()
             printfn "inserting version"
@@ -279,7 +281,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
 
         | _ -> respondWith 400 "invalid path in URL"
 
-    member this.DoHTTP(method: string, url: string, body: string, getHeader: GetHeader, setHeader: SetHeader) =
+    member this.HandleRequest(method: string, url: string, body: string, getHeader: GetHeader, setHeader: SetHeader) =
 
         let header name =
             match getHeader.Invoke(name) with
@@ -294,7 +296,7 @@ type FHIRLiteServer(deps: IServerDependencies) =
                     if System.String.IsNullOrEmpty body then
                         None
                     else
-                        Some <| deps.ParseJSON body
+                        Some <| jsonImpl.ParseJSON body
                 IfMatch = header "if-match"
                 IfModifiedSince = None
                 IfNoneExist = None

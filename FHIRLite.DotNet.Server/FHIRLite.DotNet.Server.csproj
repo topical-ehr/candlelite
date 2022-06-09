@@ -9,7 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\FHIRLite.Core\FHIRLite.Core.fsproj" />
     <ProjectReference Include="..\FHIRLite.DotNet.JSON\FHIRLite.DotNet.JSON.fsproj" />
-    <ProjectReference Include="..\FHIRLite.DotNet.Sqlite\FHIRLite.DotNet.Sqlite.fsproj" />
+    <ProjectReference Include="..\FHIRLite.DotNet.SQLite\FHIRLite.DotNet.SQLite.fsproj" />
   </ItemGroup>
 
 </Project>

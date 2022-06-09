@@ -1,8 +1,13 @@
 using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.FSharp.Collections;
+
+using FHIRLite.Core;
+using FHIRLite.DotNet;
 
 // Initialise FHIRLight
-var deps = new FHIRLite.DotNet.Sqlite.SqliteImpl();
-var fhirServer = new FHIRLite.Core.Server.FHIRLiteServer(deps);
+var dbImpl = SQLite.DotNetSQLiteImpl.UseFile("fhirlite.sqlite.db");
+var jsonImpl = new JsonViaJsonNode.DotNetJSON();
+var fhirServer = new Server.FHIRLiteServer(new Config(), dbImpl, jsonImpl);
 
 // Start HTTP server using the .NET 6 "Minimal API" (https://docs.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis?view=aspnetcore-6.0)
 var builder = WebApplication.CreateBuilder(args);
@@ -18,7 +23,7 @@ app.MapMethods(
 
         var bodyString = await new StreamReader(req.Body).ReadToEndAsync();
 
-        var response = fhirServer.DoHTTP(
+        var response = fhirServer.HandleRequest(
             req.Method.ToString(),
             url[prefix.Length..],
             bodyString,
@@ -33,3 +38,10 @@ app.MapMethods(
 );
 
 app.Run();
+
+class Config : Server.IFHIRLiteConfig
+{
+    public FSharpMap<string, FSharpList<Tuple<string, Search.SearchParameter>>> SearchParameters => Search.defaultParametersMap;
+
+    public DateTime CurrentDateTime => DateTime.Now;
+}

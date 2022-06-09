@@ -1,15 +1,13 @@
-﻿module FHIRLite.DotNet.Sqlite
+﻿module FHIRLite.DotNet.SQLite
 
 open Microsoft.Data.Sqlite
 
 open FHIRLite.Core
 open FHIRLite.Core.Server
 
-type SqliteImpl() =
+type DotNetSQLiteImpl(connectionString: string) =
 
-    let cs = "Data Source=in_memory_for_process;Mode=Memory;Cache=Shared"
-    let cs = "Data Source=fhirlite.sqlite.db"
-    let conn = new SqliteConnection(cs)
+    let conn = new SqliteConnection(connectionString)
 
     let createDB () =
 
@@ -27,7 +25,15 @@ type SqliteImpl() =
     do conn.Open()
     do createDB ()
 
-    interface IServerDependencies with
+    static member InMemory() =
+        let cs = "Data Source=in_memory_for_process;Mode=Memory;Cache=Shared"
+        DotNetSQLiteImpl(cs)
+
+    static member UseFile(filename: string) =
+        let cs = $"Data Source=%s{filename}"
+        DotNetSQLiteImpl(cs)
+
+    interface IFHIRLiteDB with
 
         member this.RunSQL(statement: SQL.Statement) : seq<obj array> =
             seq {
@@ -38,7 +44,12 @@ type SqliteImpl() =
                 printfn "SQL: %s" sql.SQL
 
                 for name, value in sql.Parameters do
-                    let withDbNull = if value <> null then value else System.DBNull.Value
+                    let withDbNull =
+                        if value <> null then
+                            value
+                        else
+                            System.DBNull.Value
+
                     cmd.Parameters.AddWithValue(name, withDbNull) |> ignore
                     printfn "  %s -> %A" name withDbNull
 
@@ -52,10 +63,3 @@ type SqliteImpl() =
                     printfn "  row: %A" values
                     yield values
             }
-
-        member this.CurrentDateTime: System.DateTime = System.DateTime.Now
-
-        member this.ParseJSON(json: string) : JSON.IJsonElement =
-            FHIRLite.DotNet.JsonViaJsonNode.JsonViaJsonNode.Parse json
-
-        member this.SearchParameters: Search.ParametersMap = Search.defaultParametersMap

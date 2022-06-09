@@ -80,3 +80,8 @@ type JsonViaJsonNode(root: JsonNode) =
                         node.[prop] <- JsonObject()
 
                     node <- node.[prop]
+
+type DotNetJSON() =
+    interface Server.IFHIRLiteJSON with
+        member this.ParseJSON(json: string) : JSON.IJsonElement =
+            JsonViaJsonNode.Parse json

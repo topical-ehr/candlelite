@@ -6,6 +6,7 @@
   <ItemGroup>
     <Compile Include="Types.fs" />
     <Compile Include="JSON.fs" />
+    <Compile Include="Bundle.fs" />
     <Compile Include="URL.fs" />
     <Compile Include="SQL.fs" />
     <Compile Include="SQLite.fs" />
