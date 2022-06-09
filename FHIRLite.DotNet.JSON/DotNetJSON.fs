@@ -42,7 +42,8 @@ type JsonViaJsonNode(root: JsonNode) =
                                 | Some newValue -> object[pair.Key] <- newValue
                                 | None -> ()
                             | _ -> ()
-                        | _ -> failwithf $"unexpected type %A{pair.Value}")
+                        | _ -> failwithf $"unexpected type %A{pair.Value}"
+                    )
                 | _ -> ()
 
             walk root
@@ -64,7 +65,8 @@ type JsonViaJsonNode(root: JsonNode) =
                 else
                     ""
             with
-            | :? InvalidOperationException -> invalidArg "path" (sprintf "could not get string at path %A" path)
+            | :? InvalidOperationException ->
+                invalidArg "path" (sprintf "could not get string at path %A" path)
 
         member this.GetStrings(path: string list) : string list =
 
@@ -73,7 +75,8 @@ type JsonViaJsonNode(root: JsonNode) =
             | [ prop ] ->
                 match root[prop] with
                 | null -> []
-                | :? JsonArray as arr -> arr |> Seq.map (fun n -> n.GetValue<string>()) |> Seq.toList
+                | :? JsonArray as arr ->
+                    arr |> Seq.map (fun n -> n.GetValue<string>()) |> Seq.toList
                 | n -> [ n.GetValue() ]
             | _ ->
                 let (heads, last) = path |> List.splitAt (path.Length - 1)
@@ -132,3 +135,10 @@ type DotNetJSON() =
 
         member _.BundleToJSON bundle =
             JsonSerializer.Serialize(bundle, opts)
+
+        member _.ParseBundle(json: string) : Bundle.Bundle =
+            JsonSerializer.Deserialize(json, opts)
+
+        member _.ParseBundle(resource: JSON.IJsonElement) : Bundle.Bundle =
+            let node = (resource :?> JsonViaJsonNode).Node
+            JsonSerializer.Deserialize(node, opts)

@@ -13,6 +13,9 @@ type IFHIRLiteJSON =
 
     abstract member BundleToJSON: bundle: Bundle -> string
 
+    abstract member ParseBundle: json: string -> Bundle
+    abstract member ParseBundle: resource: JSON.IJsonElement -> Bundle
+
 type IFHIRLiteConfig =
     // allow customisation of parameters
     abstract member SearchParameters: Search.ParametersMap
@@ -324,35 +327,6 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
         | _ -> respondWith 400 "invalid path in URL"
 
-
-    let POST (req: Request) =
-        (*
-            Spec extracts:
-
-            creates a new resource in a server-assigned location
-            If an id is provided, the server SHALL ignore it.
-            The server SHALL populate the id, meta.versionId and meta.lastUpdated with the new correct values
-            -- https://www.hl7.org/fhir/http.html#create
-        *)
-
-        // TODO: check URL path?
-
-        match req.Body with
-        | None -> respondWith 400 "not JSON body in POST (create) request"
-        | Some resource ->
-            // create and set IDs
-            let _type = JSON.resourceType resource
-            let newId = { Type = _type; Id = nextCounter _type }
-            resource.SetString([ "id" ], newId.Id)
-
-            let (meta, json) = storeResource newId resource
-
-            // respond
-            respondAsClientPrefers 201 req json
-            |> addETagAndLastUpdated resource
-            |> addLocation newId meta
-
-
     let GET (req: Request) =
 
         match req.URL.PathSegments with
@@ -365,6 +339,111 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | [| _type |] -> search _type req
 
         | _ -> respondWith 400 "invalid path in URL"
+
+    let create _type (req: Request) =
+        (*
+            Spec extracts:
+
+            creates a new resource in a server-assigned location
+            If an id is provided, the server SHALL ignore it.
+            The server SHALL populate the id, meta.versionId and meta.lastUpdated with the new correct values
+            -- https://www.hl7.org/fhir/http.html#create
+        *)
+
+        match req.Body with
+        | None -> respondWith 400 "not JSON body in POST (create) request"
+        | Some resource ->
+            // create and set IDs
+            let typeFromResource = JSON.resourceType resource
+
+            if typeFromResource <> _type then
+                invalidArg "type" "type in URL doesn't match that of resource"
+
+            let newId = { Type = _type; Id = nextCounter _type }
+            resource.SetString([ "id" ], newId.Id)
+
+            let (meta, json) = storeResource newId resource
+
+            // respond
+            respondAsClientPrefers 201 req json
+            |> addETagAndLastUpdated resource
+            |> addLocation newId meta
+
+    let createOnly (req: Request) =
+
+        match req.URL.PathSegments with
+        | [| _type |] -> create _type req
+        | _ -> respondWith 400 "invalid path for bundled POST request"
+
+
+    let transaction (req: Request) =
+        match req.Body with
+        | None -> invalidArg "body" "missing body"
+        | Some body ->
+            let bundle = jsonImpl.ParseBundle body
+
+            let executeEntry (entry: Bundle.BundleEntry) =
+                match entry.FullUrl, entry.Request with
+                | Some fullUrl, Some request ->
+                    let req =
+                        {
+                            Body = Some entry.Resource
+                            URL = URL.parse request.Url
+                            IfMatch = request.IfMatch
+                            IfModifiedSince = request.IfModifiedSince
+                            IfNoneExist = request.IfNoneExist
+                            PreferReturn = Some Minimal
+                        }
+
+                    let res =
+                        match request.Method with
+                        | "GET" -> GET req
+                        | "POST" -> createOnly req
+                        | "PUT" -> PUT req
+                        | _ -> respondWith 405 "method not allowed"
+
+
+                    ()
+                | _ ->
+                    invalidArg
+                        "Bundle.entry"
+                        "transaction/batch bundle entries should have fullUrl and request"
+
+            let isTransaction =
+                match bundle.Type with
+                | "transaction" -> true
+                | "batch" -> false
+                | _ -> invalidArg "bundle" "expected batch or transaction bundle"
+
+            let entryExecutionOrder =
+                Array.zeroCreate bundle.Entry.Length |> Array.mapi (fun i _ -> i)
+
+            if isTransaction then
+
+                let orderForTransactionEntry index =
+                    let methodOrder = [| "DELETE"; "POST"; "PUT"; "PATCH"; "GET"; "HEAD" |]
+
+                    match bundle.Entry[index].Request with
+                    | Some request -> Array.findIndex ((=) request.Method) methodOrder
+                    | None ->
+                        invalidArg
+                            "Bundle.entry"
+                            "transaction/batch bundle entries should have fullUrl and request"
+
+
+                entryExecutionOrder
+                |> Array.sortInPlaceWith (fun a b ->
+                    (orderForTransactionEntry a) - (orderForTransactionEntry b)
+                )
+
+            failwith "A"
+
+    let POST (req: Request) =
+
+        match req.URL.PathSegments with
+        | [||] -> transaction req
+        | [| _type |] -> create _type req
+        | _ -> respondWith 400 "invalid path for POST request"
 
     member this.HandleRequest
         (

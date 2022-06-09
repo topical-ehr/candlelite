@@ -1,4 +1,4 @@
-module FHIRLite.Tests
+module FHIRLite.JsonTests
 
 open System
 open System.Text.Json.Nodes

@@ -8,7 +8,7 @@
     }
   },
   "profiles": {
-    "FHIRLite.DotNet.Server": {
+    "FHIRLite.DotNet.SampleServer": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,

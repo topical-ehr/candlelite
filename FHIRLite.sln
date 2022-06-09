@@ -11,7 +11,7 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FHIRLite.DotNet.JSON", "FHI
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FHIRLite.DotNet.SQLite", "FHIRLite.DotNet.SQLite\FHIRLite.DotNet.SQLite.fsproj", "{0E381E85-C930-45CE-90F2-4E5B37320A7A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FHIRLite.DotNet.Server", "FHIRLite.DotNet.Server\FHIRLite.DotNet.Server.csproj", "{ECA390BE-CF72-4B35-BE3E-05074E549D10}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FHIRLite.DotNet.SampleServer", "FHIRLite.DotNet.SampleServer\FHIRLite.DotNet.SampleServer.csproj", "{ECA390BE-CF72-4B35-BE3E-05074E549D10}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
