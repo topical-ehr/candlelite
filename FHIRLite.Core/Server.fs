@@ -65,6 +65,13 @@ module Private =
             LastUpdated: string option
         }
 
+    type StorageMode =
+        | CheckRefsIndexAndStore
+        | PreliminaryIndexing of allReferences: JSON.HashSetOfStrings
+        | StoreOnly
+        | IndexAndStore
+
+
     let respondWith status bodyResource bodyString =
         {
             Status = status
@@ -285,6 +292,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
             if deleted then
                 invalidArg "resource" $"referenced resource is deleted (%s{ref})"
+
         | _ -> failwithf $"multiple resources for reference (%s{ref})!"
 
     let checkReferencesExist references =
@@ -303,6 +311,11 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 let id = TypeId.From _type _id
                 checkTypeIdReference id
             | _ -> invalidArg "resource" $"invalid reference (%s{ref})"
+
+
+    let storeResource mode id meta (resource: JSON.IJsonElement) =
+
+        ()
 
     let checkRefsIndexAndStoreResource id meta (resource: JSON.IJsonElement) =
         // check references
@@ -633,6 +646,10 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 entryExecutionOrder
                 |> Array.map (fun index ->
                     let (res, _) = processEntry bundle.Entry[index] storageFunction
+
+                    if isTransaction && not (res.Response.Value.Status.StartsWith("2")) then
+                        // rollback
+                        ()
 
                     res
                 )
