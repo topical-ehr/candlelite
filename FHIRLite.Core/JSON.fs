@@ -39,14 +39,10 @@ let resourceId (elt: IJsonElement) =
 
 type HashSetOfStrings = System.Collections.Generic.HashSet<string>
 
-let allReferences (resource: IJsonElement) =
-    let set = HashSetOfStrings()
-
+let collectReferences (set: HashSetOfStrings) (resource: IJsonElement) =
     resource.WalkAndModify(fun prop value ->
         if prop = "reference" then
             set.Add value |> ignore
 
         None
     )
-
-    set

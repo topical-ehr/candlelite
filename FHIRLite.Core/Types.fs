@@ -12,3 +12,52 @@ type TypeId =
         { Type = _type; Id = _id }
 
 type TokenValue = { System: string; Code: string }
+
+type OperationOutcomeIssue =
+    {
+        Severity: string
+        Code: string
+        Diagnostics: string
+
+    }
+
+type OperationOutcomeSeverity =
+    | Fatal
+    | Error
+    | Warning
+    | Information
+
+type OperationOutcomeCodes =
+    | Structure
+    | Required
+    | Value
+    | Invariant
+    | Not_Supported
+    | Duplicate
+    | Multiple_Matches
+    | Not_Found
+    | Deleted
+    | Conflict
+    | Exception
+    | Informational
+
+type OperationOutcome = { Issue: OperationOutcomeIssue list }
+
+let operationOutcome
+    (severity: OperationOutcomeSeverity)
+    (code: OperationOutcomeCodes)
+    diagnosticInfo
+    =
+    let toCode x =
+        (string x).Replace("_", "-")
+
+    {
+        Issue =
+            [
+                {
+                    Severity = toCode severity
+                    Code = toCode code
+                    Diagnostics = diagnosticInfo
+                }
+            ]
+    }

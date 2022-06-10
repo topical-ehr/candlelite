@@ -11,72 +11,94 @@ type IFHIRLiteJSON =
     // JSON can be parsed using platform libs (e.g. System.Text.Json or JSON.parse)
     abstract member ParseJSON: json: string -> JSON.IJsonElement
 
-    abstract member BundleToJSON: bundle: Bundle -> string
+    abstract member ToJSON: bundle: Bundle -> string
+    abstract member ToJSON: oo: OperationOutcome -> string
 
     abstract member ParseBundle: json: string -> Bundle
     abstract member ParseBundle: resource: JSON.IJsonElement -> Bundle
 
 type IFHIRLiteConfig =
     // allow customisation of parameters
-    abstract member SearchParameters: Search.ParametersMap
+    abstract member SearchParameters: Indexes.ParametersMap
 
     // returns time that's used to set lastUpdated - can be overriden to use a fixed value (e.g. for tests)
     abstract member CurrentDateTime: System.DateTime
 
-type PreferReturn =
-    | Minimal
-    | Representation
-    | OperationOutcome
+module Private =
+    type PreferReturn =
+        | Minimal
+        | Representation
+        | OperationOutcome
 
-type Request =
-    {
-        URL: URL.FhirURL
-        Body: JSON.IJsonElement option
+    type Request =
+        {
+            URL: URL.FhirURL
+            Body: JSON.IJsonElement option
 
-        IfMatch: string option
-        IfModifiedSince: string option
-        IfNoneExist: string option
-        PreferReturn: PreferReturn option
-    }
+            IfMatch: string option
+            IfModifiedSince: string option
+            IfNoneExist: string option
+            PreferReturn: PreferReturn option
+        }
+        static member forURL url =
+            {
+                URL = url
+                Body = None
+                IfMatch = None
+                IfModifiedSince = None
+                IfNoneExist = None
+                PreferReturn = None
+            }
 
-type Response =
-    {
-        Status: int
-        Body: string
+    type Response =
+        {
+            Status: int
 
-        Location: string option
-        ETag: string option
-        LastUpdated: string option
-    }
+            // IJsonElement is used when the resource needs to be added to a bundle
+            // string is used when it can get sent directly to the client (saving need to serialise again)
+            BodyResource: JSON.IJsonElement
+            BodyString: string
 
-let respondWith status body =
-    {
-        Status = status
-        Body = body
-        Location = None
-        ETag = None
-        LastUpdated = None
-    }
+            Location: string option
+            TypeId: TypeId option
+            ETag: string option
+            LastUpdated: string option
+        }
 
-let addETagAndLastUpdated resource response =
-    let metaInfo = JSON.metaInfo resource
+    let respondWith status bodyResource bodyString =
+        {
+            Status = status
+            BodyResource = bodyResource
+            BodyString = bodyString
+            Location = None
+            TypeId = None
+            ETag = None
+            LastUpdated = None
+        }
 
-    { response with
-        ETag = Some $"W/\"{metaInfo.VersionId}\""
-        LastUpdated = Some(metaInfo.LastUpdated)
-    }
+    let addETagAndLastUpdated resource response =
+        let metaInfo = JSON.metaInfo resource
 
-let addLocation (id: TypeId) (meta: JSON.MetaInfo) response =
-    let location = $"%s{id.Type}/%s{id.Id}/_history/%s{meta.VersionId}"
+        { response with
+            ETag = Some $"W/\"{metaInfo.VersionId}\""
+            LastUpdated = Some(metaInfo.LastUpdated)
+        }
 
-    { response with
-        Response.Location = Some location
-    }
+    let addLocation (id: TypeId) (meta: JSON.MetaInfo) response =
+        let location = $"%s{id.Type}/%s{id.Id}/_history/%s{meta.VersionId}"
 
-type GetHeader = delegate of string -> string
-type SetHeader = delegate of string * string -> unit
-type SetStatus = delegate of int -> unit
-type SetBody = delegate of string -> unit
+        { response with
+            Response.Location = Some location
+            Response.TypeId = Some id
+        }
+
+    type GetHeader = delegate of string -> string
+    type SetHeader = delegate of string * string -> unit
+    type SetStatus = delegate of int -> unit
+    type SetBody = delegate of string -> unit
+
+open Private
+
 
 [<AbstractClass>]
 type IFHIRLiteServer() =
@@ -115,49 +137,36 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
     let nextVersionId () =
         nextCounter "versionId"
 
+    let respondWithOO httpStatus severity code msg =
+        let oo = operationOutcome severity code msg
+        let json = jsonImpl.ToJSON oo
+        let resource = jsonImpl.ParseJSON json // TODO: can be a bit more efficient?
+        respondWith httpStatus resource json
+
+
     let respondWithSingleResource expectedId (results: obj array list) =
         match results.Length with
-        | 0 -> respondWith 404 "not found"
+        | 0 -> respondWithOO 404 Error Not_Found "not found"
         | 1 ->
             let json = results[0][0] |> string
             let deleted = results[0][1] |> unbox<int>
 
             if deleted = 1 then
-                respondWith 410 "deleted"
+                respondWithOO 410 Error Deleted "deleted"
             else
                 let resource = jsonImpl.ParseJSON json
                 let idFromResource = JSON.resourceId resource
 
                 if idFromResource <> expectedId then
-                    respondWith 404 "version corresponds to a different resource"
+                    respondWithOO 404 Error Value "version corresponds to a different resource"
                 else
-                    json |> respondWith 200 |> addETagAndLastUpdated resource
+                    respondWith 200 resource json |> addETagAndLastUpdated resource
         | _ -> failwithf "multiple entries!"
 
-    let respondWithBundle (results: obj array list) =
-        {
-            ResourceType = "Bundle"
-            Total = results.Length
-            Type = BundleType.SearchSet
-            Timestamp = currentTimestamp ()
-            Link = [||]
-            Entry =
-                [|
-                    for row in results do
-                        let json = row[0] |> string
-                        let resource = jsonImpl.ParseJSON json
-                        let idFromResource = JSON.resourceId resource
-
-                        {
-                            FullUrl = Some <| idFromResource.TypeId
-                            Resource = resource
-                            Request = None
-                            Response = None
-                        }
-                |]
-        }
-        |> jsonImpl.BundleToJSON
-        |> respondWith 200
+    let respondWithBundle status (bundle: Bundle) =
+        let json = jsonImpl.ToJSON bundle
+        // TODO: avoid re-parsing?
+        respondWith status (jsonImpl.ParseJSON json) json
 
     let read _type _id req =
         let id = TypeId.From _type _id
@@ -209,24 +218,51 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             else
                 conditions @ [ SQL.IndexConditions._type _type ]
 
-        [
-            for p in pr do
-                SQL.IndexConditions.valueEqual _type p.Name p.Value
-        ]
-        |> addTypeClauseIfNeeded
-        |> SQL.readResourcesViaIndex
-        |> runQuery
-        |> respondWithBundle
+        let results =
+            [
+                for p in pr do
+                    SQL.IndexConditions.valueEqual _type p.Name p.Value
+            ]
+            |> addTypeClauseIfNeeded
+            |> SQL.readResourcesViaIndex
+            |> runQuery
+
+        let bundle =
+            {
+                ResourceType = "Bundle"
+                Total = results.Length
+                Type = BundleType.SearchSet
+                Timestamp = currentTimestamp ()
+                Link = [||]
+                Entry =
+                    [|
+                        for row in results do
+                            let json = row[0] |> string
+                            let resource = jsonImpl.ParseJSON json
+                            let idFromResource = JSON.resourceId resource
+
+                            {
+                                FullUrl = Some <| idFromResource.TypeId
+                                Resource = resource
+                                Request = None
+                                Response = None
+                            }
+                    |]
+            }
+
+        bundle, respondWithBundle 200 bundle
+
+    // |> respondWithSearchResults
 
 
-    let respondAsClientPrefers status (req: Request) (body: string) =
+    let respondAsClientPrefers status (req: Request) resource json =
         match req.PreferReturn with
         | None
-        | Some Minimal -> respondWith status ""
-        | Some Representation -> respondWith status body
+        | Some Minimal -> respondWith status null ""
+        | Some Representation -> respondWith status resource json
         | Some OperationOutcome -> invalidArg "PreferReturn" "OperationOutcome not implemented" // TODO
 
-    let updateMeta (resource: JSON.IJsonElement) =
+    let updateVersionId (resource: JSON.IJsonElement) =
         let newVersionId = nextVersionId ()
         let newLastUpdated = currentTimestamp ()
 
@@ -237,6 +273,19 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             JSON.VersionId = newVersionId
             JSON.LastUpdated = newLastUpdated
         }
+
+    let checkTypeIdReference typeId =
+        let rows = SQL.readIsDeletedViaIndex [ (SQL.IndexConditions._id typeId) ] |> runQuery
+        let ref = typeId.TypeId
+
+        match rows with
+        | [] -> invalidArg "resource" $"reference doesn't exist (%s{ref})"
+        | [ row ] ->
+            let deleted = unbox<bool> row[0]
+
+            if deleted then
+                invalidArg "resource" $"referenced resource is deleted (%s{ref})"
+        | _ -> failwithf $"multiple resources for reference (%s{ref})!"
 
     let checkReferencesExist references =
         for ref in references do
@@ -252,60 +301,84 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             match segments with
             | [| _type; _id |] ->
                 let id = TypeId.From _type _id
-                let rows = SQL.readIsDeletedViaIndex [ (SQL.IndexConditions._id id) ] |> runQuery
-
-                match rows with
-                | [] -> invalidArg "resource" $"reference doesn't exist (%s{ref})"
-                | [ row ] ->
-                    let deleted = unbox<bool> row[0]
-
-                    if deleted then
-                        invalidArg "resource" $"referenced resource is deleted (%s{ref})"
-                | _ -> failwithf $"multiple resources for reference (%s{ref})!"
-
-                ()
+                checkTypeIdReference id
             | _ -> invalidArg "resource" $"invalid reference (%s{ref})"
 
-    let storeResource id (resource: JSON.IJsonElement) =
-        // create and set a new versionId
-        let meta = updateMeta resource
-
+    let checkRefsIndexAndStoreResource id meta (resource: JSON.IJsonElement) =
         // check references
-        let references = JSON.allReferences resource
+        let references = JSON.HashSetOfStrings()
+        JSON.collectReferences references resource
         checkReferencesExist references
 
         // store index entries
-        Search.indexResource config.SearchParameters resource id meta references |> runCommands
+        Indexes.indexResource config.SearchParameters resource id meta references |> runCommands
 
         // store json
         let json = resource.ToString()
         SQL.insertResourceVersion id meta json |> runCommands
 
-        meta, json
+        json
 
-    let PUT (req: Request) =
-        (*
-            Spec extracts:
+    let doPreliminaryIndexing
+        (allReferences: JSON.HashSetOfStrings)
+        id
+        meta
+        (resource: JSON.IJsonElement)
+        =
+        // used by transactions
 
-            Creates a new current version for an existing resource or creates an initial version if no resource already exists for the given id.
-            The request body SHALL be a Resource with an id element that has an identical value to the [id] in the URL.
-            If the request body includes a meta, the server SHALL ignore the provided versionId and lastUpdated values.
-            If the interaction is successful, the server SHALL return either a 200 OK HTTP status code if the resource was updated, or a 201 Created status code if the resource was created
-            Servers MAY choose to allow clients to PUT a resource to a location that does not yet exist on the server - effectively, allowing the client to define the id of the resource.
-            -- https://www.hl7.org/fhir/http.html#update
-        *)
+        // get references
+        let references = JSON.HashSetOfStrings()
+        JSON.collectReferences references resource
+        allReferences.UnionWith references
+
+        // store index entries
+        Indexes.indexResource config.SearchParameters resource id meta references |> runCommands
+
+        ""
+
+    let doStoreOnly id meta (resource: JSON.IJsonElement) =
+        // used by transactions when preliminary index doesn't need updating
+
+        let json = resource.ToString()
+        SQL.insertResourceVersion id meta json |> runCommands
+
+        json
+
+    let doIndexAndStore id meta (resource: JSON.IJsonElement) =
+        // used by transactions when preliminary index was rolled back
+
+        // collect references
+        let references = JSON.HashSetOfStrings()
+        JSON.collectReferences references resource
+
+        // store index entries
+        Indexes.indexResource config.SearchParameters resource id meta references |> runCommands
+
+        // store json
+        let json = resource.ToString()
+        SQL.insertResourceVersion id meta json |> runCommands
+
+        json
+
+
+
+
+    let PUT (req: Request) storeResource =
+        // https://www.hl7.org/fhir/http.html#update
+
         match req.URL.PathSegments with
         | [| _type; _id |] ->
             let id = TypeId.From _type _id
 
             match req.Body with
-            | None -> respondWith 400 "not JSON body in PUT (update) request"
+            | None -> respondWithOO 400 Error Structure "not JSON body in PUT (update) request"
             | Some resource ->
                 // for now we don't allow client-generated IDs
                 let idFromResource = JSON.resourceId resource
 
                 if id <> idFromResource then
-                    respondWith 400 "type and id in URL don't match the resource"
+                    respondWithOO 400 Error Value "type and id in URL don't match the resource"
                 else
                     // find existing versionId (to delete old index entries)
                     let versionIdResult = SQL.indexQuery (SQL.IndexConditions._id id) |> runQuery
@@ -313,19 +386,25 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                     match versionIdResult with
                     | [ [| existingVersionId |] ] ->
                         // TODO: update unchanged index entries instead of deleting?
-                        Search.deleteIndexForVersion (string existingVersionId) |> runCommands
+                        Indexes.deleteIndexForVersion (string existingVersionId) |> runCommands
 
-                        let (meta, json) = storeResource id resource
+                        let meta = updateVersionId resource
+                        let json = storeResource id meta resource
 
                         // respond
-                        respondAsClientPrefers 200 req json
+                        respondAsClientPrefers 200 req resource json
                         |> addETagAndLastUpdated resource
                         |> addLocation id meta
 
-                    | _ -> respondWith 404 $"existing resource not found ({id.TypeId})"
+                    | _ ->
+                        respondWithOO
+                            404
+                            Error
+                            Not_Found
+                            $"existing resource not found ({id.TypeId})"
 
 
-        | _ -> respondWith 400 "invalid path in URL"
+        | _ -> respondWithOO 400 Error Value "invalid path in URL"
 
     let GET (req: Request) =
 
@@ -336,22 +415,15 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
         | [| _type; _id; "_history"; versionId |] -> vread _type _id versionId req
         | [| _type; _id |] -> read _type _id req
-        | [| _type |] -> search _type req
+        | [| _type |] -> search _type req |> snd
 
-        | _ -> respondWith 400 "invalid path in URL"
+        | _ -> respondWithOO 400 Error Value "invalid path in URL"
 
-    let create _type (req: Request) =
-        (*
-            Spec extracts:
-
-            creates a new resource in a server-assigned location
-            If an id is provided, the server SHALL ignore it.
-            The server SHALL populate the id, meta.versionId and meta.lastUpdated with the new correct values
-            -- https://www.hl7.org/fhir/http.html#create
-        *)
+    let create _type (req: Request) storeResource =
+        // https://www.hl7.org/fhir/http.html#create
 
         match req.Body with
-        | None -> respondWith 400 "not JSON body in POST (create) request"
+        | None -> respondWithOO 400 Error Structure "not JSON body in POST (create) request"
         | Some resource ->
             // create and set IDs
             let typeFromResource = JSON.resourceType resource
@@ -362,18 +434,19 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             let newId = { Type = _type; Id = nextCounter _type }
             resource.SetString([ "id" ], newId.Id)
 
-            let (meta, json) = storeResource newId resource
+            let meta = updateVersionId resource
+            let json = storeResource newId meta resource
 
             // respond
-            respondAsClientPrefers 201 req json
+            respondAsClientPrefers 201 req resource json
             |> addETagAndLastUpdated resource
             |> addLocation newId meta
 
-    let createOnly (req: Request) =
+    let createFromBundle (req: Request) storeResource =
 
         match req.URL.PathSegments with
-        | [| _type |] -> create _type req
-        | _ -> respondWith 400 "invalid path for bundled POST request"
+        | [| _type |] -> create _type req storeResource
+        | _ -> respondWithOO 400 Error Value "invalid path for bundled POST request"
 
 
     let transaction (req: Request) =
@@ -382,32 +455,48 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | Some body ->
             let bundle = jsonImpl.ParseBundle body
 
-            let executeEntry (entry: Bundle.BundleEntry) =
-                match entry.FullUrl, entry.Request with
-                | Some fullUrl, Some request ->
-                    let req =
-                        {
-                            Body = Some entry.Resource
-                            URL = URL.parse request.Url
-                            IfMatch = request.IfMatch
-                            IfModifiedSince = request.IfModifiedSince
-                            IfNoneExist = request.IfNoneExist
-                            PreferReturn = Some Minimal
-                        }
+            let processEntry (entry: Bundle.BundleEntry) storeResource =
+                let res =
+                    match entry.FullUrl, entry.Request with
+                    | Some fullUrl, Some request ->
+                        let req =
+                            {
+                                Body = Some entry.Resource
+                                URL = URL.parse request.Url
+                                IfMatch = request.IfMatch
+                                IfModifiedSince = request.IfModifiedSince
+                                IfNoneExist = request.IfNoneExist
+                                PreferReturn = req.PreferReturn
+                            }
 
-                    let res =
                         match request.Method with
                         | "GET" -> GET req
-                        | "POST" -> createOnly req
-                        | "PUT" -> PUT req
-                        | _ -> respondWith 405 "method not allowed"
+                        | "POST" -> createFromBundle req storeResource
+                        | "PUT" -> PUT req storeResource
+                        | _ -> respondWithOO 405 Error Value "method not allowed"
 
+                    | _ ->
+                        respondWithOO
+                            400
+                            Error
+                            Value
+                            "transaction/batch bundle entries should have fullUrl and request"
 
-                    ()
-                | _ ->
-                    invalidArg
-                        "Bundle.entry"
-                        "transaction/batch bundle entries should have fullUrl and request"
+                {
+                    FullUrl = None
+                    Resource = res.BodyResource
+                    Request = None
+                    Response =
+                        Some
+                            {
+                                Status = res.Status.ToString()
+                                Location = res.Location
+                                Etag = res.ETag
+                                LastModified = res.LastUpdated
+                                Outcome = None
+                            }
+                },
+                res.TypeId
 
             let isTransaction =
                 match bundle.Type with
@@ -415,14 +504,15 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 | "batch" -> false
                 | _ -> invalidArg "bundle" "expected batch or transaction bundle"
 
+            // figure out execution order - needs special sorting for transactions
             let entryExecutionOrder =
                 Array.zeroCreate bundle.Entry.Length |> Array.mapi (fun i _ -> i)
 
             if isTransaction then
+                // https://www.hl7.org/fhir/http.html#trules
+                let methodOrder = [| "DELETE"; "POST"; "PUT"; "PATCH"; "GET"; "HEAD" |]
 
                 let orderForTransactionEntry index =
-                    let methodOrder = [| "DELETE"; "POST"; "PUT"; "PATCH"; "GET"; "HEAD" |]
-
                     match bundle.Entry[index].Request with
                     | Some request -> Array.findIndex ((=) request.Method) methodOrder
                     | None ->
@@ -430,20 +520,140 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                             "Bundle.entry"
                             "transaction/batch bundle entries should have fullUrl and request"
 
-
                 entryExecutionOrder
                 |> Array.sortInPlaceWith (fun a b ->
                     (orderForTransactionEntry a) - (orderForTransactionEntry b)
                 )
 
-            failwith "A"
+            let storageFunction =
+                if isTransaction then
+                    // update index and collect all references
+                    // this lets searches find in-bundle resources
 
-    let POST (req: Request) =
+                    // take a savepoint in case index needs to be rolled back
+                    let preliminaryIndex cmd =
+                        dbImpl.RunSQL(cmd "preliminary-index") |> ignore
+
+                    SQL.Savepoint |> preliminaryIndex
+
+                    let allReferences = JSON.HashSetOfStrings()
+                    let fullUrlToResolvedId = dict<string, TypeId> ([])
+
+                    entryExecutionOrder
+                    |> Array.iter (fun index ->
+                        let entry = bundle.Entry[index]
+
+                        match entry.Request with
+                        // ignore GETs
+                        | Some req when req.Method = "GET" || req.Method = "HEAD" -> ()
+                        | _ ->
+                            let (_, typeId) =
+                                processEntry
+                                    bundle.Entry[index]
+                                    (doPreliminaryIndexing allReferences)
+
+                            match typeId, entry.FullUrl with
+                            | Some typeId, Some fullUrl ->
+                                try
+                                    fullUrlToResolvedId.Add(fullUrl, typeId)
+                                with
+                                | :? System.ArgumentException ->
+                                    invalidArg "Bundle.entry.fullUrl" "Bundle has duplicate fullUrl"
+                            | None, _ -> invalidOp "processEntry did not return a type/id"
+                            | _, None ->
+                                invalidArg "Bundle" "transaction/batch entries should have fullUrl"
+                    )
+
+                    // update conditional and placeholder references
+                    // check normal references
+                    let referencesToUpdate = dict<string, TypeId> ([])
+
+                    for reference in allReferences do
+                        let parsed = URL.parse reference
+
+                        match parsed.Parameters.Length, parsed.PathSegments with
+                        | numParams, [| _type |] when numParams > 0 ->
+                            // conditional reference
+                            let (searchResultsBundle, _) = search _type (Request.forURL parsed)
+
+                            match searchResultsBundle.Entry.Length with
+                            | 1 ->
+                                let resolvedId =
+                                    searchResultsBundle.Entry[0].Resource |> JSON.resourceId
+
+                                referencesToUpdate.Add(reference, resolvedId)
+                            | 0 ->
+                                invalidArg
+                                    "Bundle.resource"
+                                    $"no matches for conditional reference (%s{reference})"
+                            | _ ->
+                                invalidArg
+                                    "Bundle.resource"
+                                    $"multiple matches for conditional reference (%s{reference})"
+
+                        | numParams, [| _type; _id |] when numParams = 0 ->
+                            // normal resource reference
+                            let id = TypeId.From _type _id
+                            checkTypeIdReference id
+
+                        | numParams, [| oid |] when numParams = 0 && oid.StartsWith("urn:uuid:") ->
+                            // placeholder UUID
+                            match fullUrlToResolvedId.TryGetValue oid with
+                            | true, typeId -> referencesToUpdate.Add(reference, typeId)
+                            | false, _ ->
+                                invalidArg
+                                    "Bundle.resource"
+                                    $"placeholder reference not present as a fullUrl (%s{reference})"
+                        | _ -> invalidArg "Bundle.resource" $"invalid reference (%s{reference})"
+
+                    if referencesToUpdate.Count > 0 then
+                        for entry in bundle.Entry do
+                            entry.Resource.WalkAndModify(fun prop value ->
+                                if prop = "reference" then
+                                    match referencesToUpdate.TryGetValue value with
+                                    | true, resolvedId -> Some resolvedId.TypeId
+                                    | _ -> None
+                                else
+                                    None
+                            )
+                        // indexed references need to be re-done
+                        // TODO: may be able to only undo affected resources
+                        SQL.SavepointRollback |> preliminaryIndex
+                        doIndexAndStore
+                    else
+                        // preliminary index should be good
+                        SQL.SavepointRelease |> preliminaryIndex
+                        doStoreOnly
+                else
+                    // batch
+                    checkRefsIndexAndStoreResource
+
+            // store resources
+            let responseEntries =
+                entryExecutionOrder
+                |> Array.map (fun index ->
+                    let (res, _) = processEntry bundle.Entry[index] storageFunction
+
+                    res
+                )
+
+            // respond
+            {
+                ResourceType = "Bundle"
+                Total = bundle.Entry.Length
+                Type = bundle.Type + "-response"
+                Timestamp = currentTimestamp ()
+                Link = [||]
+                Entry = entryExecutionOrder |> Array.map (fun index -> responseEntries[index])
+            }
+            |> respondWithBundle 200
+
+    let POST (req: Request) storeResource =
 
         match req.URL.PathSegments with
         | [||] -> transaction req
-        | [| _type |] -> create _type req
-        | _ -> respondWith 400 "invalid path for POST request"
+        | [| _type |] -> create _type req storeResource
+        | _ -> respondWithOO 400 Error Value "invalid path for POST request"
 
     member this.HandleRequest
         (
@@ -460,36 +670,41 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             | "" -> None
             | str -> Some str
 
-        let req =
-            {
-                URL = URL.parse url
-                Body =
-                    if System.String.IsNullOrEmpty body then
-                        None
-                    else
-                        Some <| jsonImpl.ParseJSON body
-                IfMatch = header "if-match"
-                IfModifiedSince = header "if-modified-since"
-                IfNoneExist = header "if-none-exist"
-                PreferReturn =
-                    match header "prefer" with
-                    | Some "return=minimal" -> Some Minimal
-                    | Some "return=representation" -> Some Representation
-                    | Some "return=OperationOutcome" ->
-                        invalidArg "prefer" "Prefer: OperationOutcome not yet supported"
-                    | Some _ -> invalidArg "prefer" "invalid value for Prefer header"
-                    | None -> None
-            }
+        try
+            let req =
+                {
+                    URL = URL.parse url
+                    Body =
+                        if System.String.IsNullOrEmpty body then
+                            None
+                        else
+                            Some <| jsonImpl.ParseJSON body
+                    IfMatch = header "if-match"
+                    IfModifiedSince = header "if-modified-since"
+                    IfNoneExist = header "if-none-exist"
+                    PreferReturn =
+                        match header "prefer" with
+                        | Some "return=minimal" -> Some Minimal
+                        | Some "return=representation" -> Some Representation
+                        | Some "return=OperationOutcome" ->
+                            invalidArg "prefer" "Prefer: OperationOutcome not yet supported"
+                        | Some _ -> invalidArg "prefer" "invalid value for Prefer header"
+                        | None -> None
+                }
 
-        let res =
-            match method with
-            | "GET" -> GET req
-            | "POST" -> POST req
-            | "PUT" -> PUT req
-            | _ -> respondWith 405 "method not allowed"
+            let res =
+                match method with
+                | "GET" -> GET req
+                | "POST" -> POST req checkRefsIndexAndStoreResource
+                | "PUT" -> PUT req checkRefsIndexAndStoreResource
+                | _ -> respondWithOO 405 Error Value "method not allowed"
 
-        for v, name in
-            [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
-            v |> Option.iter (fun v -> setHeader.Invoke(name, v))
+            for v, name in
+                [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
+                v |> Option.iter (fun v -> setHeader.Invoke(name, v))
 
-        res
+            res
+
+        with
+        | :? System.ArgumentException as ex -> respondWithOO 405 Error Value ex.Message
+        | ex -> respondWithOO 500 Error Exception ex.Message

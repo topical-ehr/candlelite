@@ -6,6 +6,7 @@ open System.Text.Json.Nodes
 open System.Text.Json.Serialization
 
 open FHIRLite.Core
+open FHIRLite.Core.Types
 
 type JsonViaJsonNode(root: JsonNode) =
 
@@ -133,8 +134,11 @@ type DotNetJSON() =
         member _.ParseJSON(json: string) =
             JsonViaJsonNode.Parse json
 
-        member _.BundleToJSON bundle =
+        member _.ToJSON(bundle: Bundle.Bundle) =
             JsonSerializer.Serialize(bundle, opts)
+
+        member _.ToJSON(oo: OperationOutcome) =
+            JsonSerializer.Serialize(oo, opts)
 
         member _.ParseBundle(json: string) : Bundle.Bundle =
             JsonSerializer.Deserialize(json, opts)

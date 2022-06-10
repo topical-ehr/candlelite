@@ -91,7 +91,8 @@ let GenerateSQL (statement: Statement) =
 
             $"INSERT INTO %s{Table.toString insert.Table} (%s{cols}) VALUES %s{vals} %s{generateReturning insert.Returning}"
 
-        | Delete delete -> $"DELETE FROM {Table.toString delete.Table} WHERE {convertWhere delete.Where}"
+        | Delete delete ->
+            $"DELETE FROM {Table.toString delete.Table} WHERE {convertWhere delete.Where}"
 
         | Update update ->
             let set =
@@ -104,6 +105,9 @@ let GenerateSQL (statement: Statement) =
                 |> String.concat ","
 
             $"UPDATE %s{Table.toString update.Table} SET %s{set} WHERE %s{convertWhere update.Where} %s{generateReturning update.Returning}"
+        | Savepoint name -> $@"SAVEPOINT ""%s{name}"""
+        | SavepointRelease name -> $@"RELEASE SAVEPOINT ""%s{name}"""
+        | SavepointRollback name -> $@"ROLLBACK TO SAVEPOINT ""%s{name}"""
 
     let sql = toSQL statement
 

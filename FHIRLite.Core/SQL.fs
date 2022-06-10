@@ -74,6 +74,9 @@ type Statement =
     | Insert of Insert
     | Update of Update
     | Delete of Delete
+    | Savepoint of string
+    | SavepointRelease of string
+    | SavepointRollback of string
 
 
 type GeneratedSQL =
@@ -195,14 +198,16 @@ let insertCounter name =
         }
 
 let insertResourceVersion (id: TypeId) (meta: JSON.MetaInfo) (json: string) =
+    let deleted = if json.Length = 0 then 1 else 0
+
     let sql =
         Insert
             {
                 Table = Table.Versions
-                Columns = [ "versionId"; "type"; "id"; "lastUpdated"; "json" ]
+                Columns = [ "versionId"; "type"; "id"; "lastUpdated"; "deleted"; "json" ]
                 Values =
                     [
-                        [ meta.VersionId; id.Type; id.Id; meta.LastUpdated; json ]
+                        [ meta.VersionId; id.Type; id.Id; meta.LastUpdated; deleted; json ]
 
                     ]
                 Returning = []
