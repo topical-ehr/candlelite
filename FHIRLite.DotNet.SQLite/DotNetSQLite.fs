@@ -9,6 +9,11 @@ type DotNetSQLiteImpl(connectionString: string) =
 
     let conn = new SqliteConnection(connectionString)
 
+    let runNonQuery sql =
+        let cmd = conn.CreateCommand()
+        cmd.CommandText <- sql
+        cmd.ExecuteNonQuery() |> ignore
+
     let createDB () =
 
         // check if have tables
@@ -18,9 +23,7 @@ type DotNetSQLiteImpl(connectionString: string) =
 
         if not reader.HasRows then
             // execute schema creation commands
-            let cmd = conn.CreateCommand()
-            cmd.CommandText <- Sqlite.schema
-            cmd.ExecuteNonQuery() |> ignore
+            runNonQuery Sqlite.schema
 
     do conn.Open()
     do createDB ()
@@ -32,6 +35,10 @@ type DotNetSQLiteImpl(connectionString: string) =
     static member UseFile(filename: string) =
         let cs = $"Data Source=%s{filename}"
         DotNetSQLiteImpl(cs)
+
+    member _.GoDangerouslyFast() =
+        runNonQuery "PRAGMA synchronous = OFF;"
+        runNonQuery "PRAGMA journal_mode = MEMORY;"
 
     interface IFHIRLiteDB with
 
@@ -51,14 +58,14 @@ type DotNetSQLiteImpl(connectionString: string) =
                             System.DBNull.Value
 
                     cmd.Parameters.AddWithValue(name, withDbNull) |> ignore
-                    printfn "  %s -> %A" name withDbNull
+                //printfn "  %s -> %A" name withDbNull
 
                 use reader = cmd.ExecuteReader()
-                printfn "  rows=%A affected=%d" reader.HasRows reader.RecordsAffected
+                //printfn "  rows=%A affected=%d" reader.HasRows reader.RecordsAffected
 
                 while reader.Read() do
                     let values = Array.create reader.FieldCount null
                     reader.GetValues values |> ignore
-                    printfn "  row: %A" values
+                    //printfn "  row: %A" values
                     yield values
             }

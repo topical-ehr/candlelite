@@ -41,7 +41,11 @@ type OperationOutcomeCodes =
     | Exception
     | Informational
 
-type OperationOutcome = { Issue: OperationOutcomeIssue list }
+type OperationOutcome =
+    {
+        ResourceType: string
+        Issue: OperationOutcomeIssue list
+    }
 
 let operationOutcome
     (severity: OperationOutcomeSeverity)
@@ -52,6 +56,7 @@ let operationOutcome
         (string x).Replace("_", "-")
 
     {
+        ResourceType = "OperationOutcome"
         Issue =
             [
                 {

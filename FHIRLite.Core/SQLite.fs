@@ -108,6 +108,9 @@ let GenerateSQL (statement: Statement) =
         | Savepoint name -> $@"SAVEPOINT ""%s{name}"""
         | SavepointRelease name -> $@"RELEASE SAVEPOINT ""%s{name}"""
         | SavepointRollback name -> $@"ROLLBACK TO SAVEPOINT ""%s{name}"""
+        | TransactionBeginImmediate -> "BEGIN IMMEDIATE TRANSACTION"
+        | TransactionCommit -> "COMMIT"
+
 
     let sql = toSQL statement
 

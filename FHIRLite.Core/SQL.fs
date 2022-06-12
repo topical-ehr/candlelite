@@ -77,6 +77,8 @@ type Statement =
     | Savepoint of string
     | SavepointRelease of string
     | SavepointRollback of string
+    | TransactionBeginImmediate
+    | TransactionCommit
 
 
 type GeneratedSQL =

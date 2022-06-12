@@ -24,12 +24,13 @@ let parseParameters (qs: string) =
             Name = nv.[0]
             Modifier = ""
             Value = nv.[1]
-        })
+        }
+    )
 
 let parse (relativeUrl: string) =
     let pathQS = relativeUrl.Split("?", 2)
 
-    let segments = pathQS.[0].Split('/')
+    let segments = pathQS.[0].Split('/') |> Array.filter (fun s -> s.Length > 0)
 
     let parameters =
         if pathQS.Length = 2 then

@@ -156,7 +156,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | 0 -> respondWithOO 404 Error Not_Found "not found"
         | 1 ->
             let json = results[0][0] |> string
-            let deleted = results[0][1] |> unbox<int>
+            let deleted = results[0][1] |> unbox<int64>
 
             if deleted = 1 then
                 respondWithOO 410 Error Deleted "deleted"
@@ -314,68 +314,40 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
 
     let storeResource mode id meta (resource: JSON.IJsonElement) =
-
-        ()
-
-    let checkRefsIndexAndStoreResource id meta (resource: JSON.IJsonElement) =
-        // check references
-        let references = JSON.HashSetOfStrings()
-        JSON.collectReferences references resource
-        checkReferencesExist references
-
-        // store index entries
-        Indexes.indexResource config.SearchParameters resource id meta references |> runCommands
-
-        // store json
-        let json = resource.ToString()
-        SQL.insertResourceVersion id meta json |> runCommands
-
-        json
-
-    let doPreliminaryIndexing
-        (allReferences: JSON.HashSetOfStrings)
-        id
-        meta
-        (resource: JSON.IJsonElement)
-        =
-        // used by transactions
-
         // get references
         let references = JSON.HashSetOfStrings()
-        JSON.collectReferences references resource
-        allReferences.UnionWith references
+
+        match mode with
+        | CheckRefsIndexAndStore
+        | PreliminaryIndexing _
+        | IndexAndStore -> JSON.collectReferences references resource
+        | StoreOnly -> ()
+
+        // process references if required
+        match mode with
+        | CheckRefsIndexAndStore -> checkReferencesExist references
+        | PreliminaryIndexing allReferences -> allReferences.UnionWith references
+        | IndexAndStore
+        | StoreOnly -> ()
 
         // store index entries
-        Indexes.indexResource config.SearchParameters resource id meta references |> runCommands
+        match mode with
+        | CheckRefsIndexAndStore
+        | PreliminaryIndexing _
+        | IndexAndStore ->
+            Indexes.indexResource config.SearchParameters resource id meta references |> runCommands
+        | StoreOnly -> ()
 
-        ""
-
-    let doStoreOnly id meta (resource: JSON.IJsonElement) =
-        // used by transactions when preliminary index doesn't need updating
-
-        let json = resource.ToString()
-        SQL.insertResourceVersion id meta json |> runCommands
-
-        json
-
-    let doIndexAndStore id meta (resource: JSON.IJsonElement) =
-        // used by transactions when preliminary index was rolled back
-
-        // collect references
-        let references = JSON.HashSetOfStrings()
-        JSON.collectReferences references resource
-
-        // store index entries
-        Indexes.indexResource config.SearchParameters resource id meta references |> runCommands
 
         // store json
-        let json = resource.ToString()
-        SQL.insertResourceVersion id meta json |> runCommands
-
-        json
-
-
-
+        match mode with
+        | PreliminaryIndexing _ -> ""
+        | CheckRefsIndexAndStore
+        | IndexAndStore
+        | StoreOnly ->
+            let json = resource.ToString()
+            SQL.insertResourceVersion id meta json |> runCommands
+            json
 
     let PUT (req: Request) storeResource =
         // https://www.hl7.org/fhir/http.html#update
@@ -442,7 +414,9 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             let typeFromResource = JSON.resourceType resource
 
             if typeFromResource <> _type then
-                invalidArg "type" "type in URL doesn't match that of resource"
+                invalidArg
+                    "type"
+                    $"type in URL doesn't match that of resource: from URL '%s{_type}', form resource '%s{typeFromResource}'"
 
             let newId = { Type = _type; Id = nextCounter _type }
             resource.SetString([ "id" ], newId.Id)
@@ -513,7 +487,9 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
             let isTransaction =
                 match bundle.Type with
-                | "transaction" -> true
+                | "transaction" ->
+                    SQL.TransactionBeginImmediate |> runCommands
+                    true
                 | "batch" -> false
                 | _ -> invalidArg "bundle" "expected batch or transaction bundle"
 
@@ -540,17 +516,20 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
             let storageFunction =
                 if isTransaction then
-                    // update index and collect all references
+                    // make preliminary update to the index and collect all references
                     // this lets searches find in-bundle resources
-
-                    // take a savepoint in case index needs to be rolled back
+                    // take savepoint to roll back afterwards because we need to roll back
+                    // updates to the id/versionId counters
+                    // TODO: make more efficient?
                     let preliminaryIndex cmd =
                         dbImpl.RunSQL(cmd "preliminary-index") |> ignore
 
                     SQL.Savepoint |> preliminaryIndex
 
                     let allReferences = JSON.HashSetOfStrings()
-                    let fullUrlToResolvedId = dict<string, TypeId> ([])
+
+                    let fullUrlToResolvedId =
+                        System.Collections.Generic.Dictionary<string, TypeId>()
 
                     entryExecutionOrder
                     |> Array.iter (fun index ->
@@ -563,7 +542,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                             let (_, typeId) =
                                 processEntry
                                     bundle.Entry[index]
-                                    (doPreliminaryIndexing allReferences)
+                                    (storeResource (PreliminaryIndexing allReferences))
 
                             match typeId, entry.FullUrl with
                             | Some typeId, Some fullUrl ->
@@ -579,7 +558,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
                     // update conditional and placeholder references
                     // check normal references
-                    let referencesToUpdate = dict<string, TypeId> ([])
+                    let referencesToUpdate = System.Collections.Generic.Dictionary<string, TypeId>()
 
                     for reference in allReferences do
                         let parsed = URL.parse reference
@@ -617,6 +596,9 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                                 invalidArg
                                     "Bundle.resource"
                                     $"placeholder reference not present as a fullUrl (%s{reference})"
+                        | numParams, [| hashtag |] when numParams = 0 && hashtag.StartsWith("#") ->
+                            // TODO: verify existence of contained resource
+                            ()
                         | _ -> invalidArg "Bundle.resource" $"invalid reference (%s{reference})"
 
                     if referencesToUpdate.Count > 0 then
@@ -632,27 +614,35 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                         // indexed references need to be re-done
                         // TODO: may be able to only undo affected resources
                         SQL.SavepointRollback |> preliminaryIndex
-                        doIndexAndStore
+                        storeResource IndexAndStore
                     else
                         // preliminary index should be good
-                        SQL.SavepointRelease |> preliminaryIndex
-                        doStoreOnly
+                        // SQL.SavepointRelease |> preliminaryIndex
+                        // storeResource StoreOnly
+
+                        // need to roll-back anyway to restore counters
+                        SQL.SavepointRollback |> preliminaryIndex
+                        storeResource IndexAndStore
                 else
                     // batch
-                    checkRefsIndexAndStoreResource
+                    storeResource CheckRefsIndexAndStore
 
-            // store resources
+            // store resources and get response bundle entries
             let responseEntries =
-                entryExecutionOrder
-                |> Array.map (fun index ->
-                    let (res, _) = processEntry bundle.Entry[index] storageFunction
+                Array.create<BundleEntry ValueOption> bundle.Entry.Length ValueNone
 
-                    if isTransaction && not (res.Response.Value.Status.StartsWith("2")) then
-                        // rollback
-                        ()
+            entryExecutionOrder
+            |> Array.iter (fun index ->
+                let (bundleEntry, _) = processEntry bundle.Entry[index] storageFunction
+                Array.set responseEntries index (ValueSome bundleEntry)
 
-                    res
-                )
+                if isTransaction && not (bundleEntry.Response.Value.Status.StartsWith("2")) then
+                    // rollback
+                    ()
+            )
+
+            if isTransaction then
+                SQL.TransactionCommit |> runCommands
 
             // respond
             {
@@ -661,7 +651,11 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 Type = bundle.Type + "-response"
                 Timestamp = currentTimestamp ()
                 Link = [||]
-                Entry = entryExecutionOrder |> Array.map (fun index -> responseEntries[index])
+                Entry =
+                    responseEntries
+                    |> Array.map (
+                        ValueOption.defaultWith (fun isNone -> failwith "response entry is None")
+                    )
             }
             |> respondWithBundle 200
 
@@ -710,10 +704,12 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 }
 
             let res =
+                let storageFunction = storeResource CheckRefsIndexAndStore
+
                 match method with
                 | "GET" -> GET req
-                | "POST" -> POST req checkRefsIndexAndStoreResource
-                | "PUT" -> PUT req checkRefsIndexAndStoreResource
+                | "POST" -> POST req storageFunction
+                | "PUT" -> PUT req storageFunction
                 | _ -> respondWithOO 405 Error Value "method not allowed"
 
             for v, name in
@@ -724,4 +720,4 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
         with
         | :? System.ArgumentException as ex -> respondWithOO 405 Error Value ex.Message
-        | ex -> respondWithOO 500 Error Exception ex.Message
+        | ex -> respondWithOO 500 Error Exception (ex.ToString())

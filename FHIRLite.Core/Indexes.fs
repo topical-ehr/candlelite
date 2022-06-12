@@ -77,12 +77,15 @@ let reference name =
     let getReference (elt: JSON.IJsonElement) =
         let parseReference (str: string) =
             match str.Split "/" with
-            | [| _type; id |] -> Reference { Type = _type; Id = id }
-            | _ -> failwithf "unable to parse reference: %s" str
+            | [| _type; id |] -> [ Reference { Type = _type; Id = id } ]
+            | [| placeholder |] when placeholder.StartsWith("urn:uuid:") -> []
+            | [| hashtag |] when hashtag.StartsWith("#") -> [] // TODO: verify is a contained resource
+
+            | _ -> failwithf "unable to parse reference in %s: %s" name str
 
         elt.GetString [ "reference" ] |> parseReference
 
-    name, indexer <| (getElements [ name ] >> (List.map (getReference)))
+    name, indexer <| (getElements [ name ] >> (List.collect (getReference)))
 
 let codeableConcept name =
     indexer <| (getElements [ name; "coding" ] >> (List.map (getSystemCode)))
@@ -223,7 +226,7 @@ let indexResource
                         // add unindexed references to enforce referential integrity
                         // (i.e. prevent deletion of the referenced resources)
                         for ref in references do
-                            [ box "ref"; ref; null; 1; null; versionId ]
+                            [ box "ref"; ref; null; 1; id.Id; versionId ]
 
                     ]
                 Returning = []
