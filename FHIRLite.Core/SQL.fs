@@ -79,6 +79,7 @@ type Statement =
     | SavepointRollback of string
     | TransactionBeginImmediate
     | TransactionCommit
+    | TransactionRollback
 
 
 type GeneratedSQL =

@@ -40,11 +40,17 @@ type DotNetSQLiteImpl(connectionString: string) =
         runNonQuery "PRAGMA synchronous = OFF;"
         runNonQuery "PRAGMA journal_mode = MEMORY;"
 
+    member _.UseWAL() =
+        runNonQuery "PRAGMA journal_mode = WAL;"
+
     interface IFHIRLiteDB with
 
         member this.RunSQL(statement: SQL.Statement) : seq<obj array> =
             seq {
                 let sql = Sqlite.GenerateSQL statement
+
+                // TODO: cache the command for better performance
+                // https://www.bricelam.net/2017/07/20/sqlite-bulk-insert.html
 
                 use cmd = conn.CreateCommand()
                 cmd.CommandText <- sql.SQL

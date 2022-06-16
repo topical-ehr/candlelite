@@ -53,7 +53,7 @@ let operationOutcome
     diagnosticInfo
     =
     let toCode x =
-        (string x).Replace("_", "-")
+        (string x).Replace("_", "-").ToLowerInvariant()
 
     {
         ResourceType = "OperationOutcome"

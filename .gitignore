@@ -3,4 +3,4 @@ obj
 TestResults
 .fake
 
-*.sqlite.db
+*.sqlite.db*

@@ -24,6 +24,9 @@ type IFHIRLiteConfig =
     // returns time that's used to set lastUpdated - can be overriden to use a fixed value (e.g. for tests)
     abstract member CurrentDateTime: System.DateTime
 
+    // e.g. "/fhir/"
+    abstract member BasePath: string
+
 module Private =
     type PreferReturn =
         | Minimal
@@ -259,14 +262,11 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
         bundle, respondWithBundle 200 bundle
 
-    // |> respondWithSearchResults
-
-
     let respondAsClientPrefers status (req: Request) resource json =
         match req.PreferReturn with
         | None
-        | Some Minimal -> respondWith status null ""
         | Some Representation -> respondWith status resource json
+        | Some Minimal -> respondWith status null ""
         | Some OperationOutcome -> invalidArg "PreferReturn" "OperationOutcome not implemented" // TODO
 
     let updateVersionId (resource: JSON.IJsonElement) =
@@ -288,7 +288,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         match rows with
         | [] -> invalidArg "resource" $"reference doesn't exist (%s{ref})"
         | [ row ] ->
-            let deleted = unbox<bool> row[0]
+            let deleted = (unbox<int64> row[0]) > 0
 
             if deleted then
                 invalidArg "resource" $"referenced resource is deleted (%s{ref})"
@@ -444,8 +444,8 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
             let processEntry (entry: Bundle.BundleEntry) storeResource =
                 let res =
-                    match entry.FullUrl, entry.Request with
-                    | Some fullUrl, Some request ->
+                    match entry.Request with
+                    | Some request ->
                         let req =
                             {
                                 Body = Some entry.Resource
@@ -467,7 +467,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                             400
                             Error
                             Value
-                            "transaction/batch bundle entries should have fullUrl and request"
+                            "transaction/batch bundle entries should have a request element"
 
                 {
                     FullUrl = None
@@ -487,9 +487,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
             let isTransaction =
                 match bundle.Type with
-                | "transaction" ->
-                    SQL.TransactionBeginImmediate |> runCommands
-                    true
+                | "transaction" -> true
                 | "batch" -> false
                 | _ -> invalidArg "bundle" "expected batch or transaction bundle"
 
@@ -507,157 +505,172 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                     | None ->
                         invalidArg
                             "Bundle.entry"
-                            "transaction/batch bundle entries should have fullUrl and request"
+                            "transaction/batch bundle entries should have a request"
 
                 entryExecutionOrder
                 |> Array.sortInPlaceWith (fun a b ->
                     (orderForTransactionEntry a) - (orderForTransactionEntry b)
                 )
 
-            let storageFunction =
-                if isTransaction then
-                    // make preliminary update to the index and collect all references
-                    // this lets searches find in-bundle resources
-                    // take savepoint to roll back afterwards because we need to roll back
-                    // updates to the id/versionId counters
-                    // TODO: make more efficient?
-                    let preliminaryIndex cmd =
-                        dbImpl.RunSQL(cmd "preliminary-index") |> ignore
-
-                    SQL.Savepoint |> preliminaryIndex
-
-                    let allReferences = JSON.HashSetOfStrings()
-
-                    let fullUrlToResolvedId =
-                        System.Collections.Generic.Dictionary<string, TypeId>()
-
-                    entryExecutionOrder
-                    |> Array.iter (fun index ->
-                        let entry = bundle.Entry[index]
-
-                        match entry.Request with
-                        // ignore GETs
-                        | Some req when req.Method = "GET" || req.Method = "HEAD" -> ()
-                        | _ ->
-                            let (_, typeId) =
-                                processEntry
-                                    bundle.Entry[index]
-                                    (storeResource (PreliminaryIndexing allReferences))
-
-                            match typeId, entry.FullUrl with
-                            | Some typeId, Some fullUrl ->
-                                try
-                                    fullUrlToResolvedId.Add(fullUrl, typeId)
-                                with
-                                | :? System.ArgumentException ->
-                                    invalidArg "Bundle.entry.fullUrl" "Bundle has duplicate fullUrl"
-                            | None, _ -> invalidOp "processEntry did not return a type/id"
-                            | _, None ->
-                                invalidArg "Bundle" "transaction/batch entries should have fullUrl"
-                    )
-
-                    // update conditional and placeholder references
-                    // check normal references
-                    let referencesToUpdate = System.Collections.Generic.Dictionary<string, TypeId>()
-
-                    for reference in allReferences do
-                        let parsed = URL.parse reference
-
-                        match parsed.Parameters.Length, parsed.PathSegments with
-                        | numParams, [| _type |] when numParams > 0 ->
-                            // conditional reference
-                            let (searchResultsBundle, _) = search _type (Request.forURL parsed)
-
-                            match searchResultsBundle.Entry.Length with
-                            | 1 ->
-                                let resolvedId =
-                                    searchResultsBundle.Entry[0].Resource |> JSON.resourceId
-
-                                referencesToUpdate.Add(reference, resolvedId)
-                            | 0 ->
-                                invalidArg
-                                    "Bundle.resource"
-                                    $"no matches for conditional reference (%s{reference})"
-                            | _ ->
-                                invalidArg
-                                    "Bundle.resource"
-                                    $"multiple matches for conditional reference (%s{reference})"
-
-                        | numParams, [| _type; _id |] when numParams = 0 ->
-                            // normal resource reference
-                            let id = TypeId.From _type _id
-                            checkTypeIdReference id
-
-                        | numParams, [| oid |] when numParams = 0 && oid.StartsWith("urn:uuid:") ->
-                            // placeholder UUID
-                            match fullUrlToResolvedId.TryGetValue oid with
-                            | true, typeId -> referencesToUpdate.Add(reference, typeId)
-                            | false, _ ->
-                                invalidArg
-                                    "Bundle.resource"
-                                    $"placeholder reference not present as a fullUrl (%s{reference})"
-                        | numParams, [| hashtag |] when numParams = 0 && hashtag.StartsWith("#") ->
-                            // TODO: verify existence of contained resource
-                            ()
-                        | _ -> invalidArg "Bundle.resource" $"invalid reference (%s{reference})"
-
-                    if referencesToUpdate.Count > 0 then
-                        for entry in bundle.Entry do
-                            entry.Resource.WalkAndModify(fun prop value ->
-                                if prop = "reference" then
-                                    match referencesToUpdate.TryGetValue value with
-                                    | true, resolvedId -> Some resolvedId.TypeId
-                                    | _ -> None
-                                else
-                                    None
-                            )
-                        // indexed references need to be re-done
-                        // TODO: may be able to only undo affected resources
-                        SQL.SavepointRollback |> preliminaryIndex
-                        storeResource IndexAndStore
-                    else
-                        // preliminary index should be good
-                        // SQL.SavepointRelease |> preliminaryIndex
-                        // storeResource StoreOnly
-
-                        // need to roll-back anyway to restore counters
-                        SQL.SavepointRollback |> preliminaryIndex
-                        storeResource IndexAndStore
-                else
-                    // batch
-                    storeResource CheckRefsIndexAndStore
-
-            // store resources and get response bundle entries
-            let responseEntries =
-                Array.create<BundleEntry ValueOption> bundle.Entry.Length ValueNone
-
-            entryExecutionOrder
-            |> Array.iter (fun index ->
-                let (bundleEntry, _) = processEntry bundle.Entry[index] storageFunction
-                Array.set responseEntries index (ValueSome bundleEntry)
-
-                if isTransaction && not (bundleEntry.Response.Value.Status.StartsWith("2")) then
-                    // rollback
-                    ()
-            )
-
             if isTransaction then
-                SQL.TransactionCommit |> runCommands
+                SQL.TransactionBeginImmediate |> runCommands
 
-            // respond
-            {
-                ResourceType = "Bundle"
-                Total = bundle.Entry.Length
-                Type = bundle.Type + "-response"
-                Timestamp = currentTimestamp ()
-                Link = [||]
-                Entry =
-                    responseEntries
-                    |> Array.map (
-                        ValueOption.defaultWith (fun isNone -> failwith "response entry is None")
-                    )
-            }
-            |> respondWithBundle 200
+            try
+                let storageFunction =
+                    if isTransaction then
+                        // make preliminary update to the index and collect all references
+                        // this lets searches find in-bundle resources
+                        // take savepoint to roll back afterwards because we need to roll back
+                        // updates to the id/versionId counters
+                        // TODO: make more efficient?
+                        let preliminaryIndex cmd =
+                            dbImpl.RunSQL(cmd "preliminary-index") |> ignore
+
+                        SQL.Savepoint |> preliminaryIndex
+
+                        let allReferences = JSON.HashSetOfStrings()
+
+                        let fullUrlToResolvedId =
+                            System.Collections.Generic.Dictionary<string, TypeId>()
+
+                        entryExecutionOrder
+                        |> Array.iter (fun index ->
+                            let entry = bundle.Entry[index]
+
+                            match entry.Request with
+                            // ignore GETs
+                            | Some req when req.Method = "GET" || req.Method = "HEAD" -> ()
+                            | _ ->
+                                let (_, typeId) =
+                                    processEntry
+                                        bundle.Entry[index]
+                                        (storeResource (PreliminaryIndexing allReferences))
+
+                                match typeId, entry.FullUrl with
+                                | Some typeId, Some fullUrl ->
+                                    try
+                                        fullUrlToResolvedId.Add(fullUrl, typeId)
+                                    with
+                                    | :? System.ArgumentException ->
+                                        invalidArg
+                                            "Bundle.entry.fullUrl"
+                                            "Bundle has duplicate fullUrl"
+                                | None, _ -> invalidOp "processEntry did not return a type/id"
+                                | _, None ->
+                                    invalidArg
+                                        "Bundle"
+                                        "transaction/batch entries should have fullUrl"
+                        )
+
+                        // update conditional and placeholder references
+                        // check normal references
+                        let referencesToUpdate =
+                            System.Collections.Generic.Dictionary<string, TypeId>()
+
+                        for reference in allReferences do
+                            let parsed = URL.parse reference
+
+                            match parsed.Parameters.Length, parsed.PathSegments with
+                            | numParams, [| _type |] when numParams > 0 ->
+                                // conditional reference
+                                let (searchResultsBundle, _) = search _type (Request.forURL parsed)
+
+                                match searchResultsBundle.Entry.Length with
+                                | 1 ->
+                                    let resolvedId =
+                                        searchResultsBundle.Entry[0].Resource |> JSON.resourceId
+
+                                    referencesToUpdate.Add(reference, resolvedId)
+                                | 0 ->
+                                    invalidArg
+                                        "Bundle.resource"
+                                        $"no matches for conditional reference (%s{reference})"
+                                | _ ->
+                                    invalidArg
+                                        "Bundle.resource"
+                                        $"multiple matches for conditional reference (%s{reference})"
+
+                            | numParams, [| _type; _id |] when numParams = 0 ->
+                                // normal resource reference
+                                let id = TypeId.From _type _id
+                                checkTypeIdReference id
+
+                            | numParams, [| oid |] when numParams = 0 && oid.StartsWith("urn:uuid:") ->
+                                // placeholder UUID
+                                match fullUrlToResolvedId.TryGetValue oid with
+                                | true, typeId -> referencesToUpdate.Add(reference, typeId)
+                                | false, _ ->
+                                    invalidArg
+                                        "Bundle.resource"
+                                        $"placeholder reference not present as a fullUrl (%s{reference})"
+                            | numParams, [| hashtag |] when numParams = 0 && hashtag.StartsWith("#") ->
+                                // TODO: verify existence of contained resource
+                                ()
+                            | _ -> invalidArg "Bundle.resource" $"invalid reference (%s{reference})"
+
+                        if referencesToUpdate.Count > 0 then
+                            for entry in bundle.Entry do
+                                entry.Resource.WalkAndModify(fun prop value ->
+                                    if prop = "reference" then
+                                        match referencesToUpdate.TryGetValue value with
+                                        | true, resolvedId -> Some resolvedId.TypeId
+                                        | _ -> None
+                                    else
+                                        None
+                                )
+                            // indexed references need to be re-done
+                            // TODO: may be able to only undo affected resources
+                            SQL.SavepointRollback |> preliminaryIndex
+                            storeResource IndexAndStore
+                        else
+                            // preliminary index should be good
+                            // SQL.SavepointRelease |> preliminaryIndex
+                            // storeResource StoreOnly
+
+                            // need to roll-back anyway to restore counters
+                            SQL.SavepointRollback |> preliminaryIndex
+                            storeResource IndexAndStore
+                    else
+                        // batch
+                        storeResource CheckRefsIndexAndStore
+
+                // store resources and get response bundle entries
+                let responseEntries =
+                    Array.create<BundleEntry ValueOption> bundle.Entry.Length ValueNone
+
+                entryExecutionOrder
+                |> Array.iter (fun index ->
+                    let (bundleEntry, _) = processEntry bundle.Entry[index] storageFunction
+                    Array.set responseEntries index (ValueSome bundleEntry)
+
+                    if isTransaction && not (bundleEntry.Response.Value.Status.StartsWith("2")) then
+                        // rollback
+                        ()
+                )
+
+                if isTransaction then
+                    SQL.TransactionCommit |> runCommands
+
+                // respond
+                {
+                    ResourceType = "Bundle"
+                    Total = bundle.Entry.Length
+                    Type = bundle.Type + "-response"
+                    Timestamp = currentTimestamp ()
+                    Link = [||]
+                    Entry =
+                        responseEntries
+                        |> Array.map (
+                            ValueOption.defaultWith (fun isNone -> failwith "response entry is None"
+                            )
+                        )
+                }
+                |> respondWithBundle 200
+            with
+            | ex ->
+                SQL.TransactionRollback |> runCommands
+                respondWithOO 500 Error Exception (ex.ToString())
+
 
     let POST (req: Request) storeResource =
 
@@ -669,7 +682,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
     member this.HandleRequest
         (
             method: string,
-            url: string,
+            urlPath: string,
             body: string,
             getHeader: GetHeader,
             setHeader: SetHeader
@@ -681,10 +694,15 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             | "" -> None
             | str -> Some str
 
+        if not <| urlPath.StartsWith(config.BasePath) then
+            failwithf "URL (%s) doesn't start with base prefix (%s)" urlPath config.BasePath
+
+        let urlPathWithoutBase = urlPath.Substring(config.BasePath.Length).Trim('/')
+
         try
             let req =
                 {
-                    URL = URL.parse url
+                    URL = URL.parse urlPathWithoutBase
                     Body =
                         if System.String.IsNullOrEmpty body then
                             None

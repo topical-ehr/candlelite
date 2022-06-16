@@ -38,6 +38,21 @@ let parameters =
             reference "encounter"
             reference "subject"
         ]
+
+        "Observation",
+        [
+            identifier
+            "code", codeableConcept "code"
+            reference "encounter"
+            reference "subject"
+        ]
+
+        "Organization",
+        [
+            identifier
+
+            "active", indexBool [ "active" ]
+        ]
     ]
 
 let defaultParametersMap: ParametersMap = parameters |> Map.ofList

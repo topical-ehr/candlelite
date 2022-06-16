@@ -19,13 +19,12 @@ app.MapMethods(
     async (HttpRequest req, HttpResponse res) =>
     {
         var url = req.GetEncodedPathAndQuery();
-        var prefix = "/fhir/";
 
         var bodyString = await new StreamReader(req.Body).ReadToEndAsync();
 
         var response = fhirServer.HandleRequest(
             req.Method.ToString(),
-            url[prefix.Length..],
+            url,
             bodyString,
             header => req.Headers[header].ToString(),
             (header, value) => res.Headers[header] = value
@@ -45,4 +44,6 @@ class Config : Server.IFHIRLiteConfig
     public FSharpMap<string, FSharpList<Tuple<string, Indexes.SearchParameter>>> SearchParameters => FHIRLite.Core.SearchParameters.defaultParametersMap;
 
     public DateTime CurrentDateTime => DateTime.Now;
+
+    public string BasePath => "/fhir";
 }
