@@ -147,28 +147,30 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
     let nextVersionId () =
         nextCounter "versionId"
 
-    let respondWithOO httpStatus severity code msg =
-        let oo = operationOutcome severity code msg
+    let respondWithOO httpStatus (oo: OperationOutcome) =
         let json = jsonImpl.ToJSON oo
         let resource = jsonImpl.ParseJSON json // TODO: can be a bit more efficient?
         respondWith httpStatus resource json
 
+    let raiseOO httpStatus code msg =
+        let oo = operationOutcome Error code msg
+        raise <| OperationOutcomeException(httpStatus, oo)
 
     let respondWithSingleResource expectedId (results: obj array list) =
         match results.Length with
-        | 0 -> respondWithOO 404 Error Not_Found "not found"
+        | 0 -> raiseOO 404 Not_Found "not found"
         | 1 ->
             let json = results[0][0] |> string
             let deleted = results[0][1] |> unbox<int64>
 
             if deleted = 1 then
-                respondWithOO 410 Error Deleted "deleted"
+                raiseOO 410 Deleted "deleted"
             else
                 let resource = jsonImpl.ParseJSON json
                 let idFromResource = JSON.resourceId resource
 
                 if idFromResource <> expectedId then
-                    respondWithOO 404 Error Value "version corresponds to a different resource"
+                    raiseOO 404 Value "version corresponds to a different resource"
                 else
                     respondWith 200 resource json |> addETagAndLastUpdated resource
         | _ -> failwithf "multiple entries!"
@@ -253,7 +255,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
                             {
                                 FullUrl = Some <| idFromResource.TypeId
-                                Resource = resource
+                                Resource = Some resource
                                 Request = None
                                 Response = None
                             }
@@ -267,7 +269,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | None
         | Some Representation -> respondWith status resource json
         | Some Minimal -> respondWith status null ""
-        | Some OperationOutcome -> invalidArg "PreferReturn" "OperationOutcome not implemented" // TODO
+        | Some OperationOutcome -> raiseOO 400 Value "PreferReturn OperationOutcome not implemented" // TODO
 
     let updateVersionId (resource: JSON.IJsonElement) =
         let newVersionId = nextVersionId ()
@@ -286,12 +288,12 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         let ref = typeId.TypeId
 
         match rows with
-        | [] -> invalidArg "resource" $"reference doesn't exist (%s{ref})"
+        | [] -> raiseOO 404 Not_Found $"reference doesn't exist (%s{ref})"
         | [ row ] ->
             let deleted = (unbox<int64> row[0]) > 0
 
             if deleted then
-                invalidArg "resource" $"referenced resource is deleted (%s{ref})"
+                raiseOO 404 Deleted $"referenced resource is deleted (%s{ref})"
 
         | _ -> failwithf $"multiple resources for reference (%s{ref})!"
 
@@ -304,13 +306,13 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 URL.parse ref
 
             if parameters.Length > 0 then
-                invalidArg "resource" $"reference should not have parameters (%s{ref})"
+                raiseOO 400 Value $"reference should not have parameters (%s{ref})"
 
             match segments with
             | [| _type; _id |] ->
                 let id = TypeId.From _type _id
                 checkTypeIdReference id
-            | _ -> invalidArg "resource" $"invalid reference (%s{ref})"
+            | _ -> raiseOO 400 Value $"invalid reference (%s{ref})"
 
 
     let storeResource mode id meta (resource: JSON.IJsonElement) =
@@ -357,13 +359,13 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             let id = TypeId.From _type _id
 
             match req.Body with
-            | None -> respondWithOO 400 Error Structure "not JSON body in PUT (update) request"
+            | None -> raiseOO 400 Structure "not JSON body in PUT (update) request"
             | Some resource ->
                 // for now we don't allow client-generated IDs
                 let idFromResource = JSON.resourceId resource
 
                 if id <> idFromResource then
-                    respondWithOO 400 Error Value "type and id in URL don't match the resource"
+                    raiseOO 400 Value "type and id in URL don't match the resource"
                 else
                     // find existing versionId (to delete old index entries)
                     let versionIdResult = SQL.indexQuery (SQL.IndexConditions._id id) |> runQuery
@@ -381,15 +383,10 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                         |> addETagAndLastUpdated resource
                         |> addLocation id meta
 
-                    | _ ->
-                        respondWithOO
-                            404
-                            Error
-                            Not_Found
-                            $"existing resource not found ({id.TypeId})"
+                    | _ -> raiseOO 404 Not_Found $"existing resource not found ({id.TypeId})"
 
 
-        | _ -> respondWithOO 400 Error Value "invalid path in URL"
+        | _ -> raiseOO 400 Value "invalid path in URL"
 
     let GET (req: Request) =
 
@@ -402,20 +399,21 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | [| _type; _id |] -> read _type _id req
         | [| _type |] -> search _type req |> snd
 
-        | _ -> respondWithOO 400 Error Value "invalid path in URL"
+        | _ -> raiseOO 400 Value "invalid path in URL"
 
     let create _type (req: Request) storeResource =
         // https://www.hl7.org/fhir/http.html#create
 
         match req.Body with
-        | None -> respondWithOO 400 Error Structure "not JSON body in POST (create) request"
+        | None -> raiseOO 400 Structure "not JSON body in POST (create) request"
         | Some resource ->
             // create and set IDs
             let typeFromResource = JSON.resourceType resource
 
             if typeFromResource <> _type then
-                invalidArg
-                    "type"
+                raiseOO
+                    400
+                    Value
                     $"type in URL doesn't match that of resource: from URL '%s{_type}', form resource '%s{typeFromResource}'"
 
             let newId = { Type = _type; Id = nextCounter _type }
@@ -433,12 +431,12 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
         match req.URL.PathSegments with
         | [| _type |] -> create _type req storeResource
-        | _ -> respondWithOO 400 Error Value "invalid path for bundled POST request"
+        | _ -> raiseOO 400 Value "invalid path for bundled POST request"
 
 
     let transaction (req: Request) =
         match req.Body with
-        | None -> invalidArg "body" "missing body"
+        | None -> raiseOO 400 Value "missing request body"
         | Some body ->
             let bundle = jsonImpl.ParseBundle body
 
@@ -448,7 +446,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                     | Some request ->
                         let req =
                             {
-                                Body = Some entry.Resource
+                                Body = entry.Resource
                                 URL = URL.parse request.Url
                                 IfMatch = request.IfMatch
                                 IfModifiedSince = request.IfModifiedSince
@@ -460,18 +458,14 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                         | "GET" -> GET req
                         | "POST" -> createFromBundle req storeResource
                         | "PUT" -> PUT req storeResource
-                        | _ -> respondWithOO 405 Error Value "method not allowed"
+                        | _ -> raiseOO 405 Value "method not allowed"
 
                     | _ ->
-                        respondWithOO
-                            400
-                            Error
-                            Value
-                            "transaction/batch bundle entries should have a request element"
+                        raiseOO 400 Value "transaction/batch entries should have a request element"
 
                 {
                     FullUrl = None
-                    Resource = res.BodyResource
+                    Resource = Some res.BodyResource
                     Request = None
                     Response =
                         Some
@@ -489,28 +483,29 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 match bundle.Type with
                 | "transaction" -> true
                 | "batch" -> false
-                | _ -> invalidArg "bundle" "expected batch or transaction bundle"
+                | _ -> raiseOO 400 Value "expected batch or transaction bundle"
 
             // figure out execution order - needs special sorting for transactions
             let entryExecutionOrder =
-                Array.zeroCreate bundle.Entry.Length |> Array.mapi (fun i _ -> i)
+                let incrementingIndices =
+                    Array.zeroCreate bundle.Entry.Length |> Array.mapi (fun i _ -> i)
 
-            if isTransaction then
-                // https://www.hl7.org/fhir/http.html#trules
-                let methodOrder = [| "DELETE"; "POST"; "PUT"; "PATCH"; "GET"; "HEAD" |]
+                if isTransaction then
+                    // https://www.hl7.org/fhir/http.html#trules
+                    let methodOrder = [| "DELETE"; "POST"; "PUT"; "PATCH"; "GET"; "HEAD" |]
 
-                let orderForTransactionEntry index =
-                    match bundle.Entry[index].Request with
-                    | Some request -> Array.findIndex ((=) request.Method) methodOrder
-                    | None ->
-                        invalidArg
-                            "Bundle.entry"
-                            "transaction/batch bundle entries should have a request"
+                    let orderForTransactionEntry index =
+                        match bundle.Entry[index].Request with
+                        | Some request -> Array.findIndex ((=) request.Method) methodOrder
+                        | None ->
+                            raiseOO 400 Value "transaction/batch entries should have a request"
 
-                entryExecutionOrder
-                |> Array.sortInPlaceWith (fun a b ->
-                    (orderForTransactionEntry a) - (orderForTransactionEntry b)
-                )
+                    incrementingIndices
+                    |> Array.sortWith (fun a b ->
+                        (orderForTransactionEntry a) - (orderForTransactionEntry b)
+                    )
+                else
+                    incrementingIndices
 
             if isTransaction then
                 SQL.TransactionBeginImmediate |> runCommands
@@ -518,8 +513,9 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             try
                 let storageFunction =
                     if isTransaction then
-                        // make preliminary update to the index and collect all references
+                        // make preliminary updates to the index and collect all references
                         // this lets searches find in-bundle resources
+
                         // take savepoint to roll back afterwards because we need to roll back
                         // updates to the id/versionId counters
                         // TODO: make more efficient?
@@ -552,13 +548,12 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                                         fullUrlToResolvedId.Add(fullUrl, typeId)
                                     with
                                     | :? System.ArgumentException ->
-                                        invalidArg
-                                            "Bundle.entry.fullUrl"
-                                            "Bundle has duplicate fullUrl"
+                                        raiseOO 400 Value $"Bundle has duplicate fullUrl {fullUrl}"
                                 | None, _ -> invalidOp "processEntry did not return a type/id"
                                 | _, None ->
-                                    invalidArg
-                                        "Bundle"
+                                    raiseOO
+                                        400
+                                        Value
                                         "transaction/batch entries should have fullUrl"
                         )
 
@@ -578,45 +573,51 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                                 match searchResultsBundle.Entry.Length with
                                 | 1 ->
                                     let resolvedId =
-                                        searchResultsBundle.Entry[0].Resource |> JSON.resourceId
+                                        searchResultsBundle.Entry[0].Resource.Value
+                                        |> JSON.resourceId
 
                                     referencesToUpdate.Add(reference, resolvedId)
                                 | 0 ->
-                                    invalidArg
-                                        "Bundle.resource"
+                                    raiseOO
+                                        400
+                                        Not_Found
                                         $"no matches for conditional reference (%s{reference})"
                                 | _ ->
-                                    invalidArg
-                                        "Bundle.resource"
+                                    raiseOO
+                                        400
+                                        Multiple_Matches
                                         $"multiple matches for conditional reference (%s{reference})"
 
                             | numParams, [| _type; _id |] when numParams = 0 ->
                                 // normal resource reference
-                                let id = TypeId.From _type _id
-                                checkTypeIdReference id
+                                checkTypeIdReference (TypeId.From _type _id)
 
                             | numParams, [| oid |] when numParams = 0 && oid.StartsWith("urn:uuid:") ->
                                 // placeholder UUID
                                 match fullUrlToResolvedId.TryGetValue oid with
                                 | true, typeId -> referencesToUpdate.Add(reference, typeId)
                                 | false, _ ->
-                                    invalidArg
-                                        "Bundle.resource"
+                                    raiseOO
+                                        400
+                                        Value
                                         $"placeholder reference not present as a fullUrl (%s{reference})"
                             | numParams, [| hashtag |] when numParams = 0 && hashtag.StartsWith("#") ->
                                 // TODO: verify existence of contained resource
                                 ()
-                            | _ -> invalidArg "Bundle.resource" $"invalid reference (%s{reference})"
+                            | _ -> raiseOO 400 Value $"invalid reference (%s{reference})"
 
                         if referencesToUpdate.Count > 0 then
                             for entry in bundle.Entry do
-                                entry.Resource.WalkAndModify(fun prop value ->
-                                    if prop = "reference" then
-                                        match referencesToUpdate.TryGetValue value with
-                                        | true, resolvedId -> Some resolvedId.TypeId
-                                        | _ -> None
-                                    else
-                                        None
+                                entry.Resource
+                                |> Option.iter (fun resource ->
+                                    resource.WalkAndModify(fun prop value ->
+                                        if prop = "reference" then
+                                            match referencesToUpdate.TryGetValue value with
+                                            | true, resolvedId -> Some resolvedId.TypeId
+                                            | _ -> None
+                                        else
+                                            None
+                                    )
                                 )
                             // indexed references need to be re-done
                             // TODO: may be able to only undo affected resources
@@ -627,7 +628,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                             // SQL.SavepointRelease |> preliminaryIndex
                             // storeResource StoreOnly
 
-                            // need to roll-back anyway to restore counters
+                            // need to roll-back to restore counters
                             SQL.SavepointRollback |> preliminaryIndex
                             storeResource IndexAndStore
                     else
@@ -640,12 +641,30 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
                 entryExecutionOrder
                 |> Array.iter (fun index ->
-                    let (bundleEntry, _) = processEntry bundle.Entry[index] storageFunction
-                    Array.set responseEntries index (ValueSome bundleEntry)
+                    try
+                        let (bundleEntry, _) = processEntry bundle.Entry[index] storageFunction
+                        Array.set responseEntries index (ValueSome bundleEntry)
+                    with
+                    // for batches store an OperationOutcome as the response for each error
+                    // for transactions, the transaction is rolled back, and the error is returned by itself
+                    | OperationOutcomeException (status, oo) when isTransaction = false ->
+                        let bundleEntry =
+                            {
+                                FullUrl = None
+                                Resource = Some (respondWithOO status oo).BodyResource
+                                Request = None
+                                Response =
+                                    Some
+                                        {
+                                            Status = status.ToString()
+                                            Location = None
+                                            Etag = None
+                                            LastModified = None
+                                            Outcome = None
+                                        }
+                            }
 
-                    if isTransaction && not (bundleEntry.Response.Value.Status.StartsWith("2")) then
-                        // rollback
-                        ()
+                        Array.set responseEntries index (ValueSome bundleEntry)
                 )
 
                 if isTransaction then
@@ -661,15 +680,17 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                     Entry =
                         responseEntries
                         |> Array.map (
-                            ValueOption.defaultWith (fun isNone -> failwith "response entry is None"
-                            )
+                            ValueOption.defaultWith (fun _ -> failwith "response entry is None")
                         )
                 }
                 |> respondWithBundle 200
             with
+            | OperationOutcomeException (status, oo) ->
+                SQL.TransactionRollback |> runCommands
+                respondWithOO status oo
             | ex ->
                 SQL.TransactionRollback |> runCommands
-                respondWithOO 500 Error Exception (ex.ToString())
+                raiseOO 500 Exception (ex.ToString())
 
 
     let POST (req: Request) storeResource =
@@ -677,7 +698,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         match req.URL.PathSegments with
         | [||] -> transaction req
         | [| _type |] -> create _type req storeResource
-        | _ -> respondWithOO 400 Error Value "invalid path for POST request"
+        | _ -> raiseOO 400 Value "invalid path for POST request"
 
     member this.HandleRequest
         (
@@ -716,8 +737,8 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                         | Some "return=minimal" -> Some Minimal
                         | Some "return=representation" -> Some Representation
                         | Some "return=OperationOutcome" ->
-                            invalidArg "prefer" "Prefer: OperationOutcome not yet supported"
-                        | Some _ -> invalidArg "prefer" "invalid value for Prefer header"
+                            raiseOO 400 Value "Prefer: OperationOutcome not yet supported"
+                        | Some _ -> raiseOO 400 Value "invalid value for Prefer header"
                         | None -> None
                 }
 
@@ -728,7 +749,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 | "GET" -> GET req
                 | "POST" -> POST req storageFunction
                 | "PUT" -> PUT req storageFunction
-                | _ -> respondWithOO 405 Error Value "method not allowed"
+                | _ -> raiseOO 405 Value "method not allowed"
 
             for v, name in
                 [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
@@ -737,5 +758,5 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             res
 
         with
-        | :? System.ArgumentException as ex -> respondWithOO 405 Error Value ex.Message
-        | ex -> respondWithOO 500 Error Exception (ex.ToString())
+        | OperationOutcomeException (status, oo) -> respondWithOO status oo
+        | ex -> respondWithOO 500 (operationOutcome Error Exception (ex.ToString()))

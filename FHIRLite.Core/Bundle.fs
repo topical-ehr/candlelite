@@ -24,7 +24,7 @@ type BundleResponse =
 type BundleEntry =
     {
         FullUrl: string option
-        Resource: JSON.IJsonElement
+        Resource: JSON.IJsonElement option
         Request: BundleRequest option
         Response: BundleResponse option
     }

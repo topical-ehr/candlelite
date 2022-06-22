@@ -66,3 +66,6 @@ let operationOutcome
                 }
             ]
     }
+
+
+exception OperationOutcomeException of int * OperationOutcome
