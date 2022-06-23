@@ -351,6 +351,38 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
             SQL.insertResourceVersion id meta json |> runCommands
             json
 
+    let DELETE (req: Request) =
+        // https://www.hl7.org/fhir/http.html#delete
+
+        match req.URL.PathSegments with
+        | [| _type; _id |] ->
+            let id = TypeId.From _type _id
+
+            // find existing versionId (to delete old index entries)
+            let versionIdResult = SQL.indexQuery (SQL.IndexConditions._id id) |> runQuery
+
+            match versionIdResult with
+            | [ [| existingVersionId |] ] ->
+                Indexes.deleteIndexForVersion (string existingVersionId) |> runCommands
+
+                let newVersionId = nextVersionId ()
+                let newLastUpdated = currentTimestamp ()
+
+                let meta =
+                    {
+                        JSON.VersionId = newVersionId
+                        JSON.LastUpdated = newLastUpdated
+                    }
+
+                SQL.insertDeletion id meta |> runCommands
+
+                respondWith 204 null ""
+
+            | _ -> raiseOO 404 Not_Found $"existing resource not found ({id.TypeId})"
+
+
+        | _ -> raiseOO 400 Value "invalid path in URL"
+
     let PUT (req: Request) storeResource =
         // https://www.hl7.org/fhir/http.html#update
 
@@ -749,6 +781,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 | "GET" -> GET req
                 | "POST" -> POST req storageFunction
                 | "PUT" -> PUT req storageFunction
+                | "DELETE" -> DELETE req
                 | _ -> raiseOO 405 Value "method not allowed"
 
             for v, name in

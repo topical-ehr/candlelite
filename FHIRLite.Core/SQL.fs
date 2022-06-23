@@ -201,19 +201,30 @@ let insertCounter name =
         }
 
 let insertResourceVersion (id: TypeId) (meta: JSON.MetaInfo) (json: string) =
-    let deleted = if json.Length = 0 then 1 else 0
+    if json.Length = 0 then
+        invalidArg "json" "json is empty"
 
-    let sql =
-        Insert
-            {
-                Table = Table.Versions
-                Columns = [ "versionId"; "type"; "id"; "lastUpdated"; "deleted"; "json" ]
-                Values =
-                    [
-                        [ meta.VersionId; id.Type; id.Id; meta.LastUpdated; deleted; json ]
+    Insert
+        {
+            Table = Table.Versions
+            Columns = [ "versionId"; "type"; "id"; "lastUpdated"; "deleted"; "json" ]
+            Values =
+                [
+                    [ meta.VersionId; id.Type; id.Id; meta.LastUpdated; 0; json ]
 
-                    ]
-                Returning = []
-            }
+                ]
+            Returning = []
+        }
 
-    sql
+let insertDeletion (id: TypeId) (meta: JSON.MetaInfo) =
+    Insert
+        {
+            Table = Table.Versions
+            Columns = [ "versionId"; "type"; "id"; "lastUpdated"; "deleted"; "json" ]
+            Values =
+                [
+                    [ meta.VersionId; id.Type; id.Id; meta.LastUpdated; 1; null ]
+
+                ]
+            Returning = []
+        }

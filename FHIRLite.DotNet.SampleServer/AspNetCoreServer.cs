@@ -15,7 +15,7 @@ var app = builder.Build();
 app.MapGet("/", () => "Hello World!");
 app.MapMethods(
     "/fhir/{*path}",
-    new[] { "GET", "POST", "PUT" },
+    new[] { "GET", "POST", "PUT", "DELETE" },
     async (HttpRequest req, HttpResponse res) =>
     {
         var url = req.GetEncodedPathAndQuery();
@@ -30,9 +30,16 @@ app.MapMethods(
             (header, value) => res.Headers[header] = value
         );
 
-        res.StatusCode = response.Status;
+        if (response.Status == 204)
+        {
+            return Results.NoContent();
+        }
+        else
+        {
+            res.StatusCode = response.Status;
+            return Results.Text(response.BodyString, "application/fhir+json");
+        }
 
-        return Results.Text(response.BodyString, "application/fhir+json");
     }
 );
 

@@ -8,10 +8,10 @@ let schema =
 CREATE TABLE versions (
     versionId   INTEGER PRIMARY KEY,
     type        TEXT NOT NULL,
-    id          TEXT NOT NULL,  -- text as can be client-assigned
+    id          TEXT NOT NULL,      -- text as can be client-assigned
     lastUpdated TEXT NOT NULL,
     deleted     TINYINT NOT NULL,
-    json        TEXT NOT NULL
+    json        TEXT                -- null when deleted
 );
 CREATE INDEX version_history_by_type_id ON versions (type, id);
 CREATE INDEX version_history_by_type    ON versions (type, lastUpdated);
