@@ -1,13 +1,13 @@
-module FHIRLite.Core.Server
+module CandleLite.Core.Server
 
-open FHIRLite.Core.Types
-open FHIRLite.Core.Bundle
+open CandleLite.Core.Types
+open CandleLite.Core.Bundle
 
-type IFHIRLiteDB =
+type ICandleLiteDB =
     // Run SQL on an instance of sqlite or perhaps soon some other DBMS
     abstract member RunSQL: statement: SQL.Statement -> (obj array) seq
 
-type IFHIRLiteJSON =
+type ICandleLiteJSON =
     // JSON can be parsed using platform libs (e.g. System.Text.Json or JSON.parse)
     abstract member ParseJSON: json: string -> JSON.IJsonElement
 
@@ -17,7 +17,7 @@ type IFHIRLiteJSON =
     abstract member ParseBundle: json: string -> Bundle
     abstract member ParseBundle: resource: JSON.IJsonElement -> Bundle
 
-type IFHIRLiteConfig =
+type ICandleLiteConfig =
     // allow customisation of parameters
     abstract member SearchParameters: Indexes.ParametersMap
 
@@ -111,14 +111,14 @@ open Private
 
 
 [<AbstractClass>]
-type IFHIRLiteServer() =
+type ICandleLiteServer() =
     // defined as an interface to prevent Fable's name mangling
     abstract member HandleRequest:
         method: string * url: string * body: string * getHeader: GetHeader * setHeader: SetHeader ->
             Response
 
 
-type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHIRLiteJSON) =
+type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl: ICandleLiteJSON) =
 
     let runQuery = dbImpl.RunSQL >> Seq.toList
     let runCommand = dbImpl.RunSQL >> Seq.toList >> ignore

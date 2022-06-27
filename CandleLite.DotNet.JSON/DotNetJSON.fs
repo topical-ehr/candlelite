@@ -1,12 +1,12 @@
-module FHIRLite.DotNet.JsonViaJsonNode
+module CandleLite.DotNet.JsonViaJsonNode
 
 open System
 open System.Text.Json
 open System.Text.Json.Nodes
 open System.Text.Json.Serialization
 
-open FHIRLite.Core
-open FHIRLite.Core.Types
+open CandleLite.Core
+open CandleLite.Core.Types
 
 type JsonViaJsonNode(root: JsonNode) =
 
@@ -130,7 +130,7 @@ type DotNetJSON() =
     do opts.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
     do opts.Converters.Add(SerializationConverter())
 
-    interface Server.IFHIRLiteJSON with
+    interface Server.ICandleLiteJSON with
         member _.ParseJSON(json: string) =
             JsonViaJsonNode.Parse json
 

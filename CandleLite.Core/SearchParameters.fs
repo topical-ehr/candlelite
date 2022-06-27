@@ -1,6 +1,6 @@
-module FHIRLite.Core.SearchParameters
+module CandleLite.Core.SearchParameters
 
-open FHIRLite.Core.Indexes
+open CandleLite.Core.Indexes
 
 let parameters =
     [

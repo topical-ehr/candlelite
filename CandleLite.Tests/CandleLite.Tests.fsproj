@@ -22,7 +22,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\FHIRLite.Core\FHIRLite.Core.fsproj" />
-    <ProjectReference Include="..\FHIRLite.DotNet.JSON\FHIRLite.DotNet.JSON.fsproj" />
+    <ProjectReference Include="..\CandleLite.Core\CandleLite.Core.fsproj" />
+    <ProjectReference Include="..\CandleLite.DotNet.JSON\CandleLite.DotNet.JSON.fsproj" />
   </ItemGroup>
 </Project>

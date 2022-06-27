@@ -1,7 +1,7 @@
-﻿module FHIRLite.Core.Indexes
+﻿module CandleLite.Core.Indexes
 
-open FHIRLite.Core.Types
-open FHIRLite.Core.SQL
+open CandleLite.Core.Types
+open CandleLite.Core.SQL
 
 type IndexedValues =
     | Id of string

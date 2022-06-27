@@ -1,4 +1,4 @@
-module FHIRLite.Core.Bundle
+module CandleLite.Core.Bundle
 
 type BundleLink = { Relation: string; Uri: string }
 

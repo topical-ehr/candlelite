@@ -1,6 +1,6 @@
-module FHIRLite.Core.SQL
+module CandleLite.Core.SQL
 
-open FHIRLite.Core.Types
+open CandleLite.Core.Types
 
 module Table =
     type T = private T of string

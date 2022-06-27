@@ -1,4 +1,4 @@
-module FHIRLite.Core.URL
+module CandleLite.Core.URL
 
 type FhirParameter =
     {

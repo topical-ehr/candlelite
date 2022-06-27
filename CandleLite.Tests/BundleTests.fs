@@ -1,11 +1,11 @@
-module FHIRLite.BundleTests
+module CandleLite.BundleTests
 
 open System
 open System.Text.Json.Nodes
 open Xunit
 
-open FHIRLite.Core
-open FHIRLite.DotNet.JsonViaJsonNode
+open CandleLite.Core
+open CandleLite.DotNet.JsonViaJsonNode
 
 let example_transaction =
     """
@@ -217,7 +217,7 @@ let example_transaction =
 }
 """
 
-let jsonImpl = DotNetJSON() :> Server.IFHIRLiteJSON
+let jsonImpl = DotNetJSON() :> Server.ICandleLiteJSON
 
 let checkBundle (bundle: Bundle.Bundle) =
     Assert.Equal("transaction", bundle.Type)

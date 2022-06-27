@@ -1,4 +1,4 @@
-module FHIRLite.Core.Types
+module CandleLite.Core.Types
 
 type TypeId =
     {

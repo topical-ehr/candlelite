@@ -7,6 +7,6 @@
     <Compile Include="DotNetJSON.fs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\FHIRLite.Core\FHIRLite.Core.fsproj" />
+    <ProjectReference Include="..\CandleLite.Core\CandleLite.Core.fsproj" />
   </ItemGroup>
 </Project>

@@ -1,11 +1,11 @@
-module FHIRLite.JsonTests
+module CandleLite.JsonTests
 
 open System
 open System.Text.Json.Nodes
 open Xunit
 
-open FHIRLite.Core.JSON
-open FHIRLite.DotNet.JsonViaJsonNode
+open CandleLite.Core.JSON
+open CandleLite.DotNet.JsonViaJsonNode
 
 // example from https://www.hl7.org/fhir/patient-example.json.html
 let example_patient =

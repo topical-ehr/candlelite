@@ -1,6 +1,6 @@
-module FHIRLite.Core.Sqlite
+module CandleLite.Core.Sqlite
 
-open FHIRLite.Core.SQL
+open CandleLite.Core.SQL
 
 let schema =
     """

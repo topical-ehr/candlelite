@@ -1,13 +1,13 @@
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.FSharp.Collections;
 
-using FHIRLite.Core;
-using FHIRLite.DotNet;
+using CandleLite.Core;
+using CandleLite.DotNet;
 
 // Initialise FHIRLight
-var dbImpl = SQLite.DotNetSQLiteImpl.UseFile("fhirlite.sqlite.db");
+var dbImpl = SQLite.DotNetSQLiteImpl.UseFile("CandleLite.sqlite.db");
 var jsonImpl = new JsonViaJsonNode.DotNetJSON();
-var fhirServer = new Server.FHIRLiteServer(new Config(), dbImpl, jsonImpl);
+var fhirServer = new Server.CandleLiteServer(new Config(), dbImpl, jsonImpl);
 
 // Start HTTP server using the .NET 6 "Minimal API" (https://docs.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis?view=aspnetcore-6.0)
 var builder = WebApplication.CreateBuilder(args);
@@ -45,10 +45,10 @@ app.MapMethods(
 
 app.Run();
 
-class Config : Server.IFHIRLiteConfig
+class Config : Server.ICandleLiteConfig
 {
     // TODO: make more C#-friendly
-    public FSharpMap<string, FSharpList<Tuple<string, Indexes.SearchParameter>>> SearchParameters => FHIRLite.Core.SearchParameters.defaultParametersMap;
+    public FSharpMap<string, FSharpList<Tuple<string, Indexes.SearchParameter>>> SearchParameters => CandleLite.Core.SearchParameters.defaultParametersMap;
 
     public DateTime CurrentDateTime => DateTime.Now;
 

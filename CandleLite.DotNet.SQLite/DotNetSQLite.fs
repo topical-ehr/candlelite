@@ -1,9 +1,9 @@
-﻿module FHIRLite.DotNet.SQLite
+﻿module CandleLite.DotNet.SQLite
 
 open Microsoft.Data.Sqlite
 
-open FHIRLite.Core
-open FHIRLite.Core.Server
+open CandleLite.Core
+open CandleLite.Core.Server
 
 type DotNetSQLiteImpl(connectionString: string) =
 
@@ -43,7 +43,7 @@ type DotNetSQLiteImpl(connectionString: string) =
     member _.UseWAL() =
         runNonQuery "PRAGMA journal_mode = WAL;"
 
-    interface IFHIRLiteDB with
+    interface ICandleLiteDB with
 
         member this.RunSQL(statement: SQL.Statement) : seq<obj array> =
             seq {

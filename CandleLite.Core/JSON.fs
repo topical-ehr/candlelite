@@ -1,6 +1,6 @@
-﻿module FHIRLite.Core.JSON
+﻿module CandleLite.Core.JSON
 
-open FHIRLite.Core.Types
+open CandleLite.Core.Types
 
 
 [<AllowNullLiteral>]

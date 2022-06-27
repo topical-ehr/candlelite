@@ -8,7 +8,7 @@
     }
   },
   "profiles": {
-    "FHIRLite.DotNet.SampleServer": {
+    "CandleLite.DotNet.SampleServer": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
