@@ -10,7 +10,7 @@ type L<'T> = ResizeArray<'T>
 let flatten x =
     Seq.collect id x |> L
 
-let newPlaceholderUrl() =
+let newPlaceholderUrl () =
     "urn:uuid:" + Guid.NewGuid().ToString()
 
 type FhirAutoDelete(fhir: FhirClient) =
@@ -26,7 +26,7 @@ type FhirAutoDelete(fhir: FhirClient) =
         member __.Dispose() =
             for r in created do
                 // printfn "Deleting: %A/%s" r.ResourceType r.Id
-                // fhir.Delete r
+                fhir.Delete r
                 ()
 
     member this.DeleteAll() =

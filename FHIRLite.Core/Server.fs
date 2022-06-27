@@ -121,7 +121,7 @@ type IFHIRLiteServer() =
 type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHIRLiteJSON) =
 
     let runQuery = dbImpl.RunSQL >> Seq.toList
-    let runCommands = dbImpl.RunSQL >> Seq.toList >> ignore
+    let runCommand = dbImpl.RunSQL >> Seq.toList >> ignore
 
     let currentTimestamp () =
         config.CurrentDateTime.ToUniversalTime().ToString("o")
@@ -337,7 +337,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | CheckRefsIndexAndStore
         | PreliminaryIndexing _
         | IndexAndStore ->
-            Indexes.indexResource config.SearchParameters resource id meta references |> runCommands
+            Indexes.indexResource config.SearchParameters resource id meta references |> runCommand
         | StoreOnly -> ()
 
 
@@ -348,7 +348,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
         | IndexAndStore
         | StoreOnly ->
             let json = resource.ToString()
-            SQL.insertResourceVersion id meta json |> runCommands
+            SQL.insertResourceVersion id meta json |> runCommand
             json
 
     let DELETE (req: Request) =
@@ -363,7 +363,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
             match versionIdResult with
             | [ [| existingVersionId |] ] ->
-                Indexes.deleteIndexForVersion (string existingVersionId) |> runCommands
+                Indexes.deleteIndexForVersion (string existingVersionId) |> runCommand
 
                 let newVersionId = nextVersionId ()
                 let newLastUpdated = currentTimestamp ()
@@ -374,7 +374,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                         JSON.LastUpdated = newLastUpdated
                     }
 
-                SQL.insertDeletion id meta |> runCommands
+                SQL.insertDeletion id meta |> runCommand
 
                 respondWith 204 null ""
 
@@ -405,7 +405,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                     match versionIdResult with
                     | [ [| existingVersionId |] ] ->
                         // TODO: update unchanged index entries instead of deleting?
-                        Indexes.deleteIndexForVersion (string existingVersionId) |> runCommands
+                        Indexes.deleteIndexForVersion (string existingVersionId) |> runCommand
 
                         let meta = updateVersionId resource
                         let json = storeResource id meta resource
@@ -540,7 +540,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                     incrementingIndices
 
             if isTransaction then
-                SQL.TransactionBeginImmediate |> runCommands
+                SQL.TransactionBeginImmediate |> runCommand
 
             try
                 let storageFunction =
@@ -673,13 +673,28 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
 
                 entryExecutionOrder
                 |> Array.iter (fun index ->
+                    let entry = bundle.Entry[index]
+
+                    let continueTransactionOnFailure () =
+                        // Not sure if spec-compliant but HAPI currently doesn't fail whole transaction when a GET returns a 400 or 404
+
+                        let isGET =
+                            (entry.Request |> Option.map (fun r -> r.Method = "GET")) = Some true
+
+                        let getsFailWholeTransaction = false
+                        isGET && (getsFailWholeTransaction = false)
+
                     try
-                        let (bundleEntry, _) = processEntry bundle.Entry[index] storageFunction
+                        let (bundleEntry, _) = processEntry entry storageFunction
                         Array.set responseEntries index (ValueSome bundleEntry)
                     with
-                    // for batches store an OperationOutcome as the response for each error
-                    // for transactions, the transaction is rolled back, and the error is returned by itself
-                    | OperationOutcomeException (status, oo) when isTransaction = false ->
+                    // For batches store an OperationOutcome as the response for each error.
+                    // For transactions (expect perhaps GET entries..),
+                    // the exception is unhandled so the transaction is rolled back
+                    // and the error is returned by itself.
+                    | OperationOutcomeException (status, oo) when
+                        isTransaction = false || continueTransactionOnFailure ()
+                        ->
                         let bundleEntry =
                             {
                                 FullUrl = None
@@ -688,7 +703,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                                 Response =
                                     Some
                                         {
-                                            Status = status.ToString()
+                                            Status = string status
                                             Location = None
                                             Etag = None
                                             LastModified = None
@@ -700,7 +715,7 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 )
 
                 if isTransaction then
-                    SQL.TransactionCommit |> runCommands
+                    SQL.TransactionCommit |> runCommand
 
                 // respond
                 {
@@ -718,10 +733,10 @@ type FHIRLiteServer(config: IFHIRLiteConfig, dbImpl: IFHIRLiteDB, jsonImpl: IFHI
                 |> respondWithBundle 200
             with
             | OperationOutcomeException (status, oo) ->
-                SQL.TransactionRollback |> runCommands
+                SQL.TransactionRollback |> runCommand
                 respondWithOO status oo
             | ex ->
-                SQL.TransactionRollback |> runCommands
+                SQL.TransactionRollback |> runCommand
                 raiseOO 500 Exception (ex.ToString())
 
 
