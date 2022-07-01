@@ -68,7 +68,12 @@ let getSystemValue (elt: JSON.IJsonElement) =
         }
 
 let getSystemCode (elt: JSON.IJsonElement) =
-    elt.GetString [ "system" ] + "|" + elt.GetString [ "code" ] |> String
+    // elt.GetString [ "system" ] + "|" + elt.GetString [ "code" ] |> String
+    Token
+        {
+            System = elt.GetString [ "system" ]
+            Code = elt.GetString [ "code" ]
+        }
 
 let identifier =
     "identifier", indexer <| (getElements [ "identifier" ] >> (List.map (getSystemValue)))
