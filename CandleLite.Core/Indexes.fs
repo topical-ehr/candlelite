@@ -68,7 +68,6 @@ let getSystemValue (elt: JSON.IJsonElement) =
         }
 
 let getSystemCode (elt: JSON.IJsonElement) =
-    // elt.GetString [ "system" ] + "|" + elt.GetString [ "code" ] |> String
     Token
         {
             System = elt.GetString [ "system" ]

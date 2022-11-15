@@ -24,9 +24,6 @@ type ICandleLiteConfig =
     // returns time that's used to set lastUpdated - can be overriden to use a fixed value (e.g. for tests)
     abstract member CurrentDateTime: System.DateTime
 
-    // e.g. "/fhir/"
-    abstract member BasePath: string
-
 module Private =
     type PreferReturn =
         | Minimal
@@ -751,6 +748,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         (
             method: string,
             urlPath: string,
+            basePath: string,
             body: string,
             getHeader: GetHeader,
             setHeader: SetHeader
@@ -762,10 +760,10 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
             | "" -> None
             | str -> Some str
 
-        if not <| urlPath.StartsWith(config.BasePath) then
-            failwithf "URL (%s) doesn't start with base prefix (%s)" urlPath config.BasePath
+        if not <| urlPath.StartsWith(basePath) then
+            failwithf "URL (%s) doesn't start with base prefix (%s)" urlPath basePath
 
-        let urlPathWithoutBase = urlPath.Substring(config.BasePath.Length).Trim('/')
+        let urlPathWithoutBase = urlPath.Substring(basePath.Length).Trim('/')
 
         try
             let req =
