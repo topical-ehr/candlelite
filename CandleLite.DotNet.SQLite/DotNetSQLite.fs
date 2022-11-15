@@ -45,7 +45,7 @@ type DotNetSQLiteImpl(connectionString: string) =
 
     interface ICandleLiteDB with
 
-        member this.RunSQL(statement: SQL.Statement) : seq<obj array> =
+        member this.RunSqlLazily(statement: SQL.Statement) : seq<obj array> =
             seq {
                 let sql = Sqlite.GenerateSQL statement
 
@@ -75,3 +75,6 @@ type DotNetSQLiteImpl(connectionString: string) =
                     //printfn "  row: %A" values
                     yield values
             }
+
+        member this.RunSql(statement: SQL.Statement) : list<obj array> =
+            (this :> ICandleLiteDB).RunSqlLazily statement |> Seq.toList

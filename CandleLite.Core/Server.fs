@@ -5,7 +5,8 @@ open CandleLite.Core.Bundle
 
 type ICandleLiteDB =
     // Run SQL on an instance of sqlite or perhaps soon some other DBMS
-    abstract member RunSQL: statement: SQL.Statement -> (obj array) seq
+    abstract member RunSql: statement: SQL.Statement -> (obj array) list
+    abstract member RunSqlLazily: statement: SQL.Statement -> (obj array) seq
 
 type ICandleLiteJSON =
     // JSON can be parsed using platform libs (e.g. System.Text.Json or JSON.parse)
@@ -117,8 +118,8 @@ type ICandleLiteServer() =
 
 type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl: ICandleLiteJSON) =
 
-    let runQuery = dbImpl.RunSQL >> Seq.toList
-    let runCommand = dbImpl.RunSQL >> Seq.toList >> ignore
+    let runQuery = dbImpl.RunSql
+    let runCommand = dbImpl.RunSql >> ignore
 
     let currentTimestamp () =
         config.CurrentDateTime.ToUniversalTime().ToString("o")
@@ -549,7 +550,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                         // updates to the id/versionId counters
                         // TODO: make more efficient?
                         let preliminaryIndex cmd =
-                            dbImpl.RunSQL(cmd "preliminary-index") |> ignore
+                            dbImpl.RunSql(cmd "preliminary-index") |> ignore
 
                         SQL.Savepoint |> preliminaryIndex
 
