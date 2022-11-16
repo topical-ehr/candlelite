@@ -178,8 +178,13 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         // TODO: avoid re-parsing?
         respondWith status (jsonImpl.ParseJSON json) json
 
+    let ensureTypeSupported _type =
+        if not <| Map.containsKey _type config.SearchParameters then
+            raiseOO 404 Not_Supported "resource type not supported"
+
     let read _type _id req =
         let id = TypeId.From _type _id
+        ensureTypeSupported _type
 
         SQL.readResourcesViaIndex [ (SQL.IndexConditions._id id) ]
         |> runQuery
@@ -187,6 +192,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
     let vread _type _id versionId req =
         let id = TypeId.From _type _id
+        ensureTypeSupported _type
 
         SQL.readVersion versionId |> runQuery |> respondWithSingleResource id
 
@@ -200,10 +206,8 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
     let historyForServer req =
         failwithf "not implemented"
 
-    let searchParams (req: Request) = req.URL.Parameters
-
     let search _type req =
-        let pr = searchParams req
+        ensureTypeSupported _type
 
         let addTypeClauseIfNeeded (conditions: SQL.WhereCondition list list) =
             // adds an index search clause for "WHERE name = type._id"
@@ -230,7 +234,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
         let results =
             [
-                for p in pr do
+                for p in req.URL.Parameters do
                     SQL.IndexConditions.valueEqual _type p.Name p.Value
             ]
             |> addTypeClauseIfNeeded
