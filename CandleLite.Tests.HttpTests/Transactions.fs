@@ -301,5 +301,10 @@ let transactionTests =
 [<Tests>]
 let transactionsTest =
     let fhir = ServerRunners.FhirServer.Current.FhirClient()
-    let tests = [ testParam (fhir) (transactionTests |> List.toSeq) ]
-    ftestList "Transactions" (List.collect id (tests |> List.map Seq.toList))
+
+    let tests =
+        [
+            testParam (fhir) (transactionTests |> List.toSeq |> Seq.skip 2 |> Seq.take 2)
+        ]
+
+    testList "Transactions" (List.collect id (tests |> List.map Seq.toList))

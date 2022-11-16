@@ -64,7 +64,7 @@ type DotNetSQLiteImpl(connectionString: string) =
                             System.DBNull.Value
 
                     cmd.Parameters.AddWithValue(name, withDbNull) |> ignore
-                //printfn "  %s -> %A" name withDbNull
+                    printfn "  %s -> %A" name withDbNull
 
                 use reader = cmd.ExecuteReader()
                 //printfn "  rows=%A affected=%d" reader.HasRows reader.RecordsAffected
