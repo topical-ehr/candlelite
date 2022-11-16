@@ -1,13 +1,12 @@
 using Microsoft.AspNetCore.Http.Extensions;
-using Microsoft.FSharp.Collections;
 
 using CandleLite.Core;
 using CandleLite.DotNet;
 
-// Initialise FHIRLight
+// Initialise CandleLite
 var dbImpl = SQLite.DotNetSQLiteImpl.UseFile("CandleLite.sqlite.db");
 Server.ICandleLiteJSON jsonImpl = new JsonViaJsonNode.DotNetJSON();
-var fhirServer = new Server.CandleLiteServer(new Config(), dbImpl, jsonImpl);
+Server.CandleLiteServer fhirServer = new(new CandleLiteConfig(), dbImpl, jsonImpl);
 
 // Start HTTP server using the .NET 6 "Minimal API" (https://docs.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis?view=aspnetcore-6.0)
 var builder = WebApplication.CreateBuilder(args);
@@ -16,9 +15,7 @@ var app = builder.Build();
 app.UseDeveloperExceptionPage();
 app.UseStatusCodePages();
 
-app.MapGet("/", () => $"Hello World! Currently at {Environment.CurrentDirectory}");
-
-CandleLite.DotNet.SampleServer.BrowseInHtml.AddRoutes(app, fhirServer);
+app.MapGet("/", () => $"Hello!\nRunning from {Environment.CurrentDirectory}");
 
 app.MapMethods(
     "/fhir/{*path}",
@@ -45,16 +42,9 @@ app.MapMethods(
             res.StatusCode = response.Status;
             return Results.Text(response.BodyString, "application/fhir+json");
         }
-
     }
 );
 
+BrowseInHtml.AddRoutes(app, fhirServer);
+
 app.Run();
-
-class Config : Server.ICandleLiteConfig
-{
-    // TODO: make more C#-friendly
-    public FSharpMap<string, FSharpList<Tuple<string, Indexes.SearchParameter>>> SearchParameters => CandleLite.Core.SearchParameters.defaultParametersMap;
-
-    public DateTime CurrentDateTime => DateTime.Now;
-}

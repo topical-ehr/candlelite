@@ -5,8 +5,7 @@ using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.FSharp.Core;
 
 using CandleLite.Core;
-
-namespace CandleLite.DotNet.SampleServer;
+using CandleLite.DotNet;
 
 public class BrowseInHtml
 {
