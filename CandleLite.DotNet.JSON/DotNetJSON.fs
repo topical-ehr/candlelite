@@ -124,11 +124,12 @@ type SerializationConverter() =
         (value :?> JsonViaJsonNode).Node.WriteTo writer
 
 
-type DotNetJSON() =
+type DotNetJSON(?indent: bool) =
     let opts = JsonSerializerOptions()
-    do opts.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
-    do opts.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
     do opts.Converters.Add(SerializationConverter())
+    do opts.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
+    do opts.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
+    do opts.WriteIndented <- defaultArg indent false
 
     interface Server.ICandleLiteJSON with
         member _.ParseJSON(json: string) =
