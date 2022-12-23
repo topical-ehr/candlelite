@@ -1,3 +1,6 @@
+namespace CandleLite.DotNet.SampleServer;
+
+using System;
 using Microsoft.FSharp.Collections;
 
 using CandleLite.Core;
