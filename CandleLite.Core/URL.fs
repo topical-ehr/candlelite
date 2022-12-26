@@ -1,5 +1,7 @@
 module CandleLite.Core.URL
 
+open System
+
 type FhirParameter =
     {
         Name: string
@@ -14,16 +16,16 @@ type FhirURL =
     }
 
 let parseParameters (qs: string) =
-    let ps = qs.Split("&")
+    let parameters = qs.Split("&")
 
-    ps
+    parameters
     |> Array.map (fun p ->
         let nv = p.Split("=", 2)
 
         {
             Name = nv.[0]
             Modifier = ""
-            Value = nv.[1]
+            Value = Uri.UnescapeDataString(nv.[1])
         }
     )
 

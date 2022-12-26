@@ -209,35 +209,8 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
     let search _type req =
         ensureTypeSupported _type
 
-        let addTypeClauseIfNeeded (conditions: SQL.WhereCondition list list) =
-            // adds an index search clause for "WHERE name = type._id"
-            // in cases where there are no other type-specific criteria
-            // e.g. when just doing a "GET /Patient"
-            let typeDot = _type + "."
-
-            let alreadyHas =
-                conditions
-                |> List.exists (fun clause ->
-                    clause
-                    |> List.exists (fun col ->
-                        match col.Column, col.Condition with
-                        | "name", SQL.Equal (SQL.StringValue name) -> name.StartsWith typeDot
-                        | _ -> false
-
-                    )
-                )
-
-            if alreadyHas then
-                conditions
-            else
-                conditions @ [ SQL.IndexConditions._type _type ]
-
         let results =
-            [
-                for p in req.URL.Parameters do
-                    SQL.IndexConditions.valueEqual _type p.Name p.Value
-            ]
-            |> addTypeClauseIfNeeded
+            Search.conditionsFromUrl config.SearchParameters _type req.URL.Parameters
             |> SQL.readResourcesViaIndex
             |> runQuery
 

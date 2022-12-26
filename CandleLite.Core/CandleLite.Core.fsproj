@@ -11,6 +11,7 @@
     <Compile Include="SQL.fs" />
     <Compile Include="SQLite.fs" />
     <Compile Include="Indexes.fs" />
+    <Compile Include="Search.fs" />
     <Compile Include="SearchParameters.fs" />
     <Compile Include="Server.fs" />
   </ItemGroup>

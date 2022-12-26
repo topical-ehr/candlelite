@@ -3,6 +3,15 @@
 open CandleLite.Core.Types
 open CandleLite.Core.SQL
 
+type Type =
+    | Id
+    | Number
+    | Reference
+    | DateTime
+    | String
+    | Bool
+    | Token
+
 type IndexedValues =
     | Id of string
     | Number of decimal
@@ -34,6 +43,7 @@ type IndexedValues =
 
 type SearchParameter =
     {
+        Type: Type
         Indexer: JSON.IJsonElement -> IndexedValues list
     }
 
@@ -41,18 +51,18 @@ type ResourceTypeOrALL = string
 type ParameterName = string
 type ParametersMap = Map<ResourceTypeOrALL, list<ParameterName * SearchParameter>>
 
-let indexer func = { Indexer = func }
+let indexer _type func = { Type = _type; Indexer = func }
 
 let indexString path =
-    indexer <| fun elt -> [ elt.GetString path |> String ]
+    indexer Type.String <| fun elt -> [ elt.GetString path |> String ]
 
 let indexStrings path =
-    indexer <| fun elt -> elt.GetStrings path |> List.map String
+    indexer Type.String <| fun elt -> elt.GetStrings path |> List.map String
 
 let indexDateTime path =
-    indexer <| fun elt -> [ elt.GetString path |> DateTime ]
+    indexer Type.DateTime <| fun elt -> [ elt.GetString path |> DateTime ]
 
-let indexId = "_id", indexer <| fun elt -> [ Id <| (JSON.resourceId elt).Id ]
+let indexId = "_id", indexer Type.Id <| fun elt -> [ Id <| (JSON.resourceId elt).Id ]
 
 let getElements path (elt: JSON.IJsonElement) =
     elt.GetElements path
@@ -75,7 +85,7 @@ let getSystemCode (elt: JSON.IJsonElement) =
         }
 
 let identifier =
-    "identifier", indexer <| (getElements [ "identifier" ] >> (List.map (getSystemValue)))
+    "identifier", indexer Type.Token <| (getElements [ "identifier" ] >> (List.map (getSystemValue)))
 
 let reference name =
     let getReference (elt: JSON.IJsonElement) =
@@ -89,23 +99,24 @@ let reference name =
 
         elt.GetString [ "reference" ] |> parseReference
 
-    name, indexer <| (getElements [ name ] >> (List.collect (getReference)))
+    name, indexer Type.Reference <| (getElements [ name ] >> (List.collect (getReference)))
 
 let codeableConcept name =
-    indexer <| (getElements [ name; "coding" ] >> (List.map (getSystemCode)))
+    indexer Type.Token <| (getElements [ name; "coding" ] >> (List.map (getSystemCode)))
 
 
 let getStrings path (elt: JSON.IJsonElement) =
     elt.GetStrings path |> List.map String
 
 let indexElementStrings elementPath stringPath =
-    indexer <| (getElements elementPath >> (List.collect (getStrings stringPath)))
+    indexer Type.String <| (getElements elementPath >> (List.collect (getStrings stringPath)))
 
 let indexElementString elementPath stringPath =
-    indexer <| (getElements elementPath >> (List.map (getString stringPath)))
+    indexer Type.String <| (getElements elementPath >> (List.map (getString stringPath)))
 
 let indexBool path =
     {
+        Type = Type.Bool
         Indexer = fun elt -> [ (elt.GetString path) = "true" |> Bool ]
     }
 
@@ -114,6 +125,7 @@ let indexTrueOrDateExists path =
     let pathDate = [ (path + "DateTime") ]
 
     {
+        Type = Type.Bool
         Indexer =
             fun elt ->
                 let bool = elt.GetString pathBool
@@ -132,6 +144,7 @@ let contactPoints path filterForSystem =
             List.filter (fun (e: JSON.IJsonElement) -> (e.GetString [ "system" ]) = system)
 
     {
+        Type = Type.String
         Indexer =
             fun elt ->
                 elt.GetElements path
@@ -141,6 +154,7 @@ let contactPoints path filterForSystem =
 
 let indexAddress path =
     {
+        Type = Type.String
         Indexer =
             fun elt ->
                 elt.GetElements path
@@ -160,6 +174,7 @@ let indexAddress path =
 
 let humanName path =
     {
+        Type = Type.String
         Indexer =
             fun elt ->
                 elt.GetElements path
@@ -191,15 +206,18 @@ let indexResource
     (references: JSON.HashSetOfStrings) // NB: HashSet will be mutated!
     =
 
-    let paramsForType =
-        match Map.tryFind id.Type paramsMap with
-        | Some list -> list
-        | None -> []
+    let paramsToIndex =
+        let paramsForType =
+            match Map.tryFind id.Type paramsMap with
+            | Some list -> list
+            | None -> []
 
-    let paramsForAll = (Map.find "ALL" paramsMap)
+        let paramsForAll = (Map.find "ALL" paramsMap)
+
+        paramsForAll @ paramsForType
 
     let allRows =
-        (paramsForAll @ paramsForType) |> List.map (fun (name, sp) -> name, sp.Indexer resource)
+        paramsToIndex |> List.map (fun (name, sp) -> name, sp.Indexer resource)
 
     let versionId = box meta.VersionId
 
