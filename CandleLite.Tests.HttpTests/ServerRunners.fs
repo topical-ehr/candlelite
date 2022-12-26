@@ -56,6 +56,25 @@ type RemoteFhirRunner(baseUrl: string) =
     interface IDisposable with
         member __.Dispose() = ()
 
+type CandleLiteFhirRunner() =
+
+    let fhirBase = "http://localhost:5454/fhir"
+
+    let cts = new CancellationTokenSource()
+    let serverTask = CandleLite.DotNet.SampleServer.AspNetCoreServer.Run([||], 5454, cts.Token)
+
+    let fhirClient () =
+        new FhirClient(fhirBase, PreferredFormat = ResourceFormat.Json, Timeout = 30 * 1000)
+
+    interface IFhirRunner with
+        member __.FhirClient() = fhirClient ()
+        member __.Name() = "CandleLite (embedded)"
+
+    interface IDisposable with
+        member __.Dispose() =
+            cts.Cancel()
+            serverTask.Wait()
+
 
 type GoFhirMongoRunner() as this =
     // Drop fhir-bench mongo database

@@ -23,5 +23,10 @@
     <PackageReference Include="Expecto" Version="8.10.1" />
     <PackageReference Include="FSharp.Data" Version="3.0.0-beta3" />
     <PackageReference Include="Hl7.Fhir.R4" Version="3.8.3" />
+    <PackageReference Include="Logary.Adapters.Facade" Version="5.0.1" />
+    <PackageReference Include="Hopac" Version="0.5.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CandleLite.DotNet.SampleServer\CandleLite.DotNet.SampleServer.csproj" />
   </ItemGroup>
 </Project>

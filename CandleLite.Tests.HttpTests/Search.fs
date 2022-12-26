@@ -5,7 +5,6 @@ open Expecto
 open Hl7.Fhir.Model
 open Hl7.Fhir.Rest
 open Utils
-open ServerRunners
 
 type ObservationsFixture(fhir:FhirClient) =
     let autoDelete = new FhirAutoDelete(fhir)
