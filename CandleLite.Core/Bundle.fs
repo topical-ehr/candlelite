@@ -33,10 +33,10 @@ type Bundle =
     {
         ResourceType: string
         Type: string
-        Total: int
-        Timestamp: string
-        Link: BundleLink array
-        Entry: BundleEntry array
+        Total: int option
+        Timestamp: string option
+        Link: BundleLink array option
+        Entry: BundleEntry array option
     }
 
 module BundleType =

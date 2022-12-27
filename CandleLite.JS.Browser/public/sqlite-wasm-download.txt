@@ -1,0 +1,4 @@
+wget https://sqlite.org/2022/sqlite-wasm-3400000.zip
+
+unzip *.zip
+mv sqlite-wasm-* sqlite-wasm

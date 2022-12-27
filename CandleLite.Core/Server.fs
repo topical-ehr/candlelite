@@ -2,6 +2,7 @@ module CandleLite.Core.Server
 
 open CandleLite.Core.Types
 open CandleLite.Core.Bundle
+open CandleLite.Core.ServerUtils
 
 type ICandleLiteDB =
     // Run SQL on an instance of sqlite or perhaps soon some other DBMS
@@ -12,11 +13,12 @@ type ICandleLiteJSON =
     // JSON can be parsed using platform libs (e.g. System.Text.Json or JSON.parse)
     abstract member ParseJSON: json: string -> JSON.IJsonElement
 
-    abstract member ToJSON: bundle: Bundle -> string
-    abstract member ToJSON: oo: OperationOutcome -> string
-
-    abstract member ParseBundle: json: string -> Bundle
+    // abstract member ParseBundle: json: string -> Bundle
     abstract member ParseBundle: resource: JSON.IJsonElement -> Bundle
+
+    abstract member BundleToJSON: bundle: Bundle -> string
+    abstract member OutcomeToJSON: oo: OperationOutcome -> string
+
 
 type ICandleLiteConfig =
     // allow customisation of parameters
@@ -25,94 +27,10 @@ type ICandleLiteConfig =
     // returns time that's used to set lastUpdated - can be overriden to use a fixed value (e.g. for tests)
     abstract member CurrentDateTime: System.DateTime
 
-module Private =
-    type PreferReturn =
-        | Minimal
-        | Representation
-        | OperationOutcome
-
-    type Request =
-        {
-            URL: URL.FhirURL
-            Body: JSON.IJsonElement option
-
-            IfMatch: string option
-            IfModifiedSince: string option
-            IfNoneExist: string option
-            PreferReturn: PreferReturn option
-        }
-        static member forURL url =
-            {
-                URL = url
-                Body = None
-                IfMatch = None
-                IfModifiedSince = None
-                IfNoneExist = None
-                PreferReturn = None
-            }
-
-    type Response =
-        {
-            Status: int
-
-            // IJsonElement is used when the resource needs to be added to a bundle
-            // string is used when it can get sent directly to the client (saving need to serialise again)
-            BodyResource: JSON.IJsonElement
-            BodyString: string
-
-            Location: string option
-            TypeId: TypeId option
-            ETag: string option
-            LastUpdated: string option
-        }
-
-    type StorageMode =
-        | CheckRefsIndexAndStore
-        | PreliminaryIndexing of allReferences: JSON.HashSetOfStrings
-        | StoreOnly
-        | IndexAndStore
-
-
-    let respondWith status bodyResource bodyString =
-        {
-            Status = status
-            BodyResource = bodyResource
-            BodyString = bodyString
-            Location = None
-            TypeId = None
-            ETag = None
-            LastUpdated = None
-        }
-
-    let addETagAndLastUpdated resource response =
-        let metaInfo = JSON.metaInfo resource
-
-        { response with
-            ETag = Some $"W/\"{metaInfo.VersionId}\""
-            LastUpdated = Some(metaInfo.LastUpdated)
-        }
-
-    let addLocation (id: TypeId) (meta: JSON.MetaInfo) response =
-        let location = $"%s{id.Type}/%s{id.Id}/_history/%s{meta.VersionId}"
-
-        { response with
-            Response.Location = Some location
-            Response.TypeId = Some id
-        }
-
-    type GetHeader = delegate of string -> string
-    type SetHeader = delegate of string * string -> unit
-    type SetStatus = delegate of int -> unit
-    type SetBody = delegate of string -> unit
-
-open Private
-
-
-[<AbstractClass>]
-type ICandleLiteServer() =
+type ICandleLiteServer =
     // defined as an interface to prevent Fable's name mangling
     abstract member HandleRequest:
-        method: string * url: string * body: string * getHeader: GetHeader * setHeader: SetHeader ->
+        method: string * urlPath: string * basePath: string * body: string * getHeader: GetHeader * setHeader: SetHeader ->
             Response
 
 
@@ -135,6 +53,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
             match results with
             | [ [| x |] ] when x = one -> ()
+            | [ [| x |] ] when x = 1 -> ()
             | _ -> failwithf "invalid result for insertCounter: %A" results
 
             "1"
@@ -146,7 +65,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         nextCounter "versionId"
 
     let respondWithOO httpStatus (oo: OperationOutcome) =
-        let json = jsonImpl.ToJSON oo
+        let json = jsonImpl.OutcomeToJSON oo
         let resource = jsonImpl.ParseJSON json // TODO: can be a bit more efficient?
         respondWith httpStatus resource json
 
@@ -174,7 +93,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         | _ -> failwithf "multiple entries!"
 
     let respondWithBundle status (bundle: Bundle) =
-        let json = jsonImpl.ToJSON bundle
+        let json = jsonImpl.BundleToJSON bundle
         // TODO: avoid re-parsing?
         respondWith status (jsonImpl.ParseJSON json) json
 
@@ -217,12 +136,12 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         let bundle =
             {
                 ResourceType = "Bundle"
-                Total = results.Length
+                Total = results.Length |> Some
                 Type = BundleType.SearchSet
-                Timestamp = currentTimestamp ()
-                Link = [||]
+                Timestamp = currentTimestamp () |> Some
+                Link = None
                 Entry =
-                    [|
+                    Some [|
                         for row in results do
                             let json = row[0] |> string
                             let resource = jsonImpl.ParseJSON json
@@ -491,18 +410,20 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 | "transaction" -> true
                 | "batch" -> false
                 | _ -> raiseOO 400 Value "expected batch or transaction bundle"
+            
+            let entries = bundle.Entry |> Option.defaultValue [||]
 
             // figure out execution order - needs special sorting for transactions
             let entryExecutionOrder =
                 let incrementingIndices =
-                    Array.zeroCreate bundle.Entry.Length |> Array.mapi (fun i _ -> i)
+                    Array.zeroCreate entries.Length |> Array.mapi (fun i _ -> i)
 
                 if isTransaction then
                     // https://www.hl7.org/fhir/http.html#trules
                     let methodOrder = [| "DELETE"; "POST"; "PUT"; "PATCH"; "GET"; "HEAD" |]
 
                     let orderForTransactionEntry index =
-                        match bundle.Entry[index].Request with
+                        match entries[index].Request with
                         | Some request -> Array.findIndex ((=) request.Method) methodOrder
                         | None ->
                             raiseOO 400 Value "transaction/batch entries should have a request"
@@ -538,7 +459,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
                         entryExecutionOrder
                         |> Array.iter (fun index ->
-                            let entry = bundle.Entry[index]
+                            let entry = entries[index]
 
                             match entry.Request with
                             // ignore GETs
@@ -546,7 +467,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                             | _ ->
                                 let (_, typeId) =
                                     processEntry
-                                        bundle.Entry[index]
+                                        entries[index]
                                         (storeResource (PreliminaryIndexing allReferences))
 
                                 match typeId, entry.FullUrl with
@@ -577,10 +498,11 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                                 // conditional reference
                                 let (searchResultsBundle, _) = search _type (Request.forURL parsed)
 
-                                match searchResultsBundle.Entry.Length with
+                                let resultEntries = searchResultsBundle.Entry |> Option.defaultValue [||] 
+                                match resultEntries.Length with
                                 | 1 ->
                                     let resolvedId =
-                                        searchResultsBundle.Entry[0].Resource.Value
+                                        resultEntries[0].Resource.Value
                                         |> JSON.resourceId
 
                                     referencesToUpdate.Add(reference, resolvedId)
@@ -614,7 +536,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                             | _ -> raiseOO 400 Value $"invalid reference (%s{reference})"
 
                         if referencesToUpdate.Count > 0 then
-                            for entry in bundle.Entry do
+                            for entry in entries do
                                 entry.Resource
                                 |> Option.iter (fun resource ->
                                     resource.WalkAndModify(fun prop value ->
@@ -644,11 +566,11 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
                 // store resources and get response bundle entries
                 let responseEntries =
-                    Array.create<BundleEntry ValueOption> bundle.Entry.Length ValueNone
+                    Array.create<BundleEntry option> entries.Length None
 
                 entryExecutionOrder
                 |> Array.iter (fun index ->
-                    let entry = bundle.Entry[index]
+                    let entry = entries[index]
 
                     let continueTransactionOnFailure () =
                         // Not sure if spec-compliant but HAPI currently doesn't fail whole transaction when a GET returns a 400 or 404
@@ -661,7 +583,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
                     try
                         let (bundleEntry, _) = processEntry entry storageFunction
-                        Array.set responseEntries index (ValueSome bundleEntry)
+                        Array.set responseEntries index (Some bundleEntry)
                     with
                     // For batches store an OperationOutcome as the response for each error.
                     // For transactions (expect perhaps GET entries..),
@@ -686,7 +608,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                                         }
                             }
 
-                        Array.set responseEntries index (ValueSome bundleEntry)
+                        Array.set responseEntries index (Some bundleEntry)
                 )
 
                 if isTransaction then
@@ -695,15 +617,15 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 // respond
                 {
                     ResourceType = "Bundle"
-                    Total = bundle.Entry.Length
+                    Total = Some entries.Length
                     Type = bundle.Type + "-response"
-                    Timestamp = currentTimestamp ()
-                    Link = [||]
+                    Timestamp = currentTimestamp () |> Some
+                    Link = None
                     Entry =
                         responseEntries
                         |> Array.map (
-                            ValueOption.defaultWith (fun _ -> failwith "response entry is None")
-                        )
+                            Option.defaultWith (fun _ -> failwith "response entry is None")
+                        ) |> Some
                 }
                 |> respondWithBundle 200
             with
@@ -722,65 +644,66 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         | [| _type |] -> create _type req storeResource
         | _ -> raiseOO 400 Value "invalid path for POST request"
 
-    member this.HandleRequest
-        (
-            method: string,
-            urlPath: string,
-            basePath: string,
-            body: string,
-            getHeader: GetHeader,
-            setHeader: SetHeader
-        ) =
+    interface ICandleLiteServer with
+        member this.HandleRequest
+            (
+                method: string,
+                urlPath: string,
+                basePath: string,
+                body: string,
+                getHeader: GetHeader,
+                setHeader: SetHeader
+            ) =
 
-        let header name =
-            match getHeader.Invoke(name) with
-            | null
-            | "" -> None
-            | str -> Some str
+            let header name =
+                match getHeader.Invoke(name) with
+                | null
+                | "" -> None
+                | str -> Some str
 
-        if not <| urlPath.StartsWith(basePath) then
-            failwithf "URL (%s) doesn't start with base prefix (%s)" urlPath basePath
+            if not <| urlPath.StartsWith(basePath) then
+                failwithf "URL (%s) doesn't start with base prefix (%s)" urlPath basePath
 
-        let urlPathWithoutBase = urlPath.Substring(basePath.Length).Trim('/')
+            let urlPathWithoutBase = urlPath.Substring(basePath.Length).Trim('/')
 
-        try
-            let req =
-                {
-                    URL = URL.parse urlPathWithoutBase
-                    Body =
-                        if System.String.IsNullOrEmpty body then
-                            None
-                        else
-                            Some <| jsonImpl.ParseJSON body
-                    IfMatch = header "if-match"
-                    IfModifiedSince = header "if-modified-since"
-                    IfNoneExist = header "if-none-exist"
-                    PreferReturn =
-                        match header "prefer" with
-                        | Some "return=minimal" -> Some Minimal
-                        | Some "return=representation" -> Some Representation
-                        | Some "return=OperationOutcome" ->
-                            raiseOO 400 Value "Prefer: OperationOutcome not yet supported"
-                        | Some _ -> raiseOO 400 Value "invalid value for Prefer header"
-                        | None -> None
-                }
+            try
+                let req =
+                    {
+                        URL = URL.parse urlPathWithoutBase
+                        Body =
+                            if System.String.IsNullOrEmpty body then
+                                None
+                            else
+                                Some <| jsonImpl.ParseJSON body
+                        IfMatch = header "if-match"
+                        IfModifiedSince = header "if-modified-since"
+                        IfNoneExist = header "if-none-exist"
+                        PreferReturn =
+                            match header "prefer" with
+                            | Some "return=minimal" -> Some Minimal
+                            | Some "return=representation" -> Some Representation
+                            | Some "return=OperationOutcome" ->
+                                raiseOO 400 Value "Prefer: OperationOutcome not yet supported"
+                            | Some _ -> raiseOO 400 Value "invalid value for Prefer header"
+                            | None -> None
+                    }
 
-            let res =
-                let storageFunction = storeResource CheckRefsIndexAndStore
+                let res =
+                    let storageFunction = storeResource CheckRefsIndexAndStore
 
-                match method with
-                | "GET" -> GET req
-                | "POST" -> POST req storageFunction
-                | "PUT" -> PUT req storageFunction
-                | "DELETE" -> DELETE req
-                | _ -> raiseOO 405 Value "method not allowed"
+                    match method with
+                    | "GET" -> GET req
+                    | "POST" -> POST req storageFunction
+                    | "PUT" -> PUT req storageFunction
+                    | "DELETE" -> DELETE req
+                    | _ -> raiseOO 405 Value "method not allowed"
 
-            for v, name in
-                [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
-                v |> Option.iter (fun v -> setHeader.Invoke(name, v))
+                for v, name in
+                    [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
+                    v |> Option.iter (fun v -> setHeader.Invoke(name, v))
 
-            res
+                res
 
-        with
-        | OperationOutcomeException (status, oo) -> respondWithOO status oo
-        | ex -> respondWithOO 500 (operationOutcome Error Exception (ex.ToString()))
+            with
+            | OperationOutcomeException (status, oo) -> respondWithOO status oo
+            | ex -> respondWithOO 500 (operationOutcome Error Exception (ex.ToString()))

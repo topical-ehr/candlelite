@@ -1,3 +1,5 @@
+namespace CandleLite.DotNet.SampleServer;
+
 using System.Text.Json.Nodes;
 using System.Text.Json;
 
@@ -9,7 +11,7 @@ using CandleLite.DotNet;
 
 public class BrowseInHtml
 {
-    public static void AddRoutes(WebApplication app, CandleLite.Core.Server.CandleLiteServer fhirServer)
+    public static void AddRoutes(WebApplication app, CandleLite.Core.Server.ICandleLiteServer fhirServer)
     {
         app.MapMethods(
             "/browse/{*path}",

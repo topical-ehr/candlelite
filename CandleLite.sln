@@ -21,6 +21,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CandleLite.DotNet.WebUI.Cli
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CandleLite.DotNet.WebUI.Server", "CandleLite.DotNet.WebUI\Server\CandleLite.DotNet.WebUI.Server.fsproj", "{0712C741-8667-4238-9CDA-BDBC33D4D76C}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CandleLite.JS", "CandleLite.JS\CandleLite.JS.fsproj", "{78BE3D75-AF41-4529-87D4-B1B66F41C3F5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -62,6 +64,10 @@ Global
 		{0712C741-8667-4238-9CDA-BDBC33D4D76C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0712C741-8667-4238-9CDA-BDBC33D4D76C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0712C741-8667-4238-9CDA-BDBC33D4D76C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{78BE3D75-AF41-4529-87D4-B1B66F41C3F5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{78BE3D75-AF41-4529-87D4-B1B66F41C3F5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{78BE3D75-AF41-4529-87D4-B1B66F41C3F5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{78BE3D75-AF41-4529-87D4-B1B66F41C3F5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{268162B5-52DC-4FE4-BD33-E9FB0C03B809} = {F37BB392-7A0F-49D3-9109-1AB6CF8FD2FE}

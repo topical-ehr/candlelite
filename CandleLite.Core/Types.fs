@@ -18,7 +18,6 @@ type OperationOutcomeIssue =
         Severity: string
         Code: string
         Diagnostics: string
-
     }
 
 type OperationOutcomeSeverity =

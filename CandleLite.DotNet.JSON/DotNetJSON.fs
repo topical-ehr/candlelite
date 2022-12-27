@@ -135,14 +135,11 @@ type DotNetJSON(?indent: bool) =
         member _.ParseJSON(json: string) =
             JsonViaJsonNode.Parse json
 
-        member _.ToJSON(bundle: Bundle.Bundle) =
+        member _.BundleToJSON(bundle: Bundle.Bundle) =
             JsonSerializer.Serialize(bundle, opts)
 
-        member _.ToJSON(oo: OperationOutcome) =
+        member _.OutcomeToJSON(oo: OperationOutcome) =
             JsonSerializer.Serialize(oo, opts)
-
-        member _.ParseBundle(json: string) : Bundle.Bundle =
-            JsonSerializer.Deserialize(json, opts)
 
         member _.ParseBundle(resource: JSON.IJsonElement) : Bundle.Bundle =
             let node = (resource :?> JsonViaJsonNode).Node

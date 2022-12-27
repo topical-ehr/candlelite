@@ -13,6 +13,7 @@
     <Compile Include="Indexes.fs" />
     <Compile Include="Search.fs" />
     <Compile Include="SearchParameters.fs" />
+    <Compile Include="ServerUtils.fs" />
     <Compile Include="Server.fs" />
   </ItemGroup>
 </Project>

@@ -4,3 +4,8 @@ TestResults
 .fake
 
 *.sqlite.db*
+*.zip
+
+candlelite_js
+fhir-sample-data
+sqlite-wasm

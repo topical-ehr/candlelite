@@ -10,7 +10,7 @@ public class AspNetCoreServer
     // Initialise CandleLite
     static readonly SQLite.DotNetSQLiteImpl dbImpl = SQLite.DotNetSQLiteImpl.UseFile("CandleLite.sqlite.db");
     static readonly Server.ICandleLiteJSON jsonImpl = new JsonViaJsonNode.DotNetJSON(indent: true);
-    static readonly Server.CandleLiteServer fhirServer = new(new CandleLiteConfig(), dbImpl, jsonImpl);
+    static readonly Server.ICandleLiteServer fhirServer = new Server.CandleLiteServer(new CandleLiteConfig(), dbImpl, jsonImpl);
 
     public static void Main(string[] args)
     {
