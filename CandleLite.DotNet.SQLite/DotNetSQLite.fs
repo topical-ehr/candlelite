@@ -5,11 +5,17 @@ open Microsoft.Data.Sqlite
 open CandleLite.Core
 open CandleLite.Core.Server
 
+let inline (=>) (name: string) (value) = struct (name, box value)
+
 type DotNetSQLiteImpl(connectionString: string) =
+    let log = LotusLogger.Logger()
 
     let conn = new SqliteConnection(connectionString)
 
     let runNonQuery sql =
+        log.Trace("executing commands", [
+            "sql" => sql,
+        ])
         let cmd = conn.CreateCommand()
         cmd.CommandText <- sql
         cmd.ExecuteNonQuery() |> ignore
@@ -23,6 +29,7 @@ type DotNetSQLiteImpl(connectionString: string) =
 
         if not reader.HasRows then
             // execute schema creation commands
+            log.Info("creating schema")
             runNonQuery Sqlite.schema
 
     do conn.Open()
@@ -54,7 +61,6 @@ type DotNetSQLiteImpl(connectionString: string) =
 
                 use cmd = conn.CreateCommand()
                 cmd.CommandText <- sql.SQL
-                printfn "SQL: %s" sql.SQL
 
                 for name, value in sql.Parameters do
                     let withDbNull =
@@ -67,7 +73,12 @@ type DotNetSQLiteImpl(connectionString: string) =
                     printfn "  %s -> %A" name withDbNull
 
                 use reader = cmd.ExecuteReader()
-                //printfn "  rows=%A affected=%d" reader.HasRows reader.RecordsAffected
+                log.Trace("executing query", [
+                    "sql" => sql.SQL
+                    "parameters" => sql.Parameters
+                    "rows_affected" => reader.RecordsAffected
+                    "has_rows" => reader.HasRows
+                ])
 
                 while reader.Read() do
                     let values = Array.create reader.FieldCount null

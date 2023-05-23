@@ -188,7 +188,6 @@ let updateCounter name =
                     }
                 ]
             Returning = [ "value" ]
-
         }
 
 let insertCounter name =

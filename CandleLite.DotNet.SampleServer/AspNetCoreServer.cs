@@ -1,6 +1,9 @@
 namespace CandleLite.DotNet.SampleServer;
 
 using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.Extensions.Logging;
+
+using LotusLogger;
 
 using CandleLite.Core;
 using CandleLite.DotNet;
@@ -18,10 +21,20 @@ public class AspNetCoreServer
     }
     public static Task Run(string[] args, int port, CancellationToken ct)
     {
-
         // Start HTTP server using the .NET 6 "Minimal API" (https://docs.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis?view=aspnetcore-6.0)
         var builder = WebApplication.CreateBuilder(args);
         var app = builder.Build();
+
+
+        // initialise logging
+        Logger.Sink = new LotusLogger.Sinks.HttpSink(
+            new Uri("http://localhost:10000/log/demo"),
+            app.Services.GetRequiredService<IHttpClientFactory>(),
+            TimeSpan.FromSeconds(1),
+            app.Services.GetRequiredService<ILoggerFactory>()
+        );
+        Logger.SessionId = Guid.NewGuid().ToString();
+
 
         app.Urls.Add($"http://*:{port}");
 
@@ -39,13 +52,13 @@ public class AspNetCoreServer
                 string bodyString = await new StreamReader(req.Body).ReadToEndAsync();
 
                 var response = fhirServer.HandleRequest(
-            req.Method.ToString(),
-            req.GetEncodedPathAndQuery(),
-            "/fhir",
-            bodyString,
-            header => req.Headers[header].ToString(),
-            (header, value) => res.Headers[header] = value
-            );
+                    req.Method.ToString(),
+                    req.GetEncodedPathAndQuery(),
+                    "/fhir",
+                    bodyString,
+                    header => req.Headers[header].ToString(),
+                    (header, value) => res.Headers[header] = value
+                );
 
                 if (response.Status == 204)
                 {

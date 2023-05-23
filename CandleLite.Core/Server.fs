@@ -33,8 +33,16 @@ type ICandleLiteServer =
         method: string * urlPath: string * basePath: string * body: string * getHeader: GetHeader * setHeader: SetHeader ->
             Response
 
+#if FABLE_COMPILER
+    // helper method as can't figure out how to set Logger.Sink from JavaScript.. (mangling gets in the way)
+    abstract member SetLogDestination: url: string -> unit
+#endif
+
+let inline (=>) (name: string) (value) = struct (name, box value)
 
 type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl: ICandleLiteJSON) =
+
+    let log = LotusLogger.Logger()
 
     let runQuery = dbImpl.RunSql
     let runCommand = dbImpl.RunSql >> ignore
@@ -44,6 +52,11 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
     let nextCounter name =
         let results = SQL.updateCounter name |> runQuery
+
+        log.Trace("nextCounter", [
+            "name" => name
+            "results" => results
+        ])
 
         match results with
         | [] ->
@@ -58,7 +71,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
             "1"
 
-        | [ [| value |] ] -> value :?> int64 |> string
+        | [ [| value |] ] -> value |> string
         | _ -> failwithf "invalid result for updateCounter: %A" results
 
     let nextVersionId () =
@@ -66,11 +79,17 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
     let respondWithOO httpStatus (oo: OperationOutcome) =
         let json = jsonImpl.OutcomeToJSON oo
+        log.Warning("respondWithOO", [
+            "oo" => json
+        ])
         let resource = jsonImpl.ParseJSON json // TODO: can be a bit more efficient?
         respondWith httpStatus resource json
 
     let raiseOO httpStatus code msg =
         let oo = operationOutcome Error code msg
+        log.Warning("raiseOO", [
+            "oo" => oo
+        ])
         raise <| OperationOutcomeException(httpStatus, oo)
 
     let respondWithSingleResource expectedId (results: obj array list) =
@@ -103,6 +122,10 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
     let read _type _id req =
         let id = TypeId.From _type _id
+        log.Trace("read", [
+            "type" => _type
+            "id" => _id
+        ])
         ensureTypeSupported _type
 
         SQL.readResourcesViaIndex [ (SQL.IndexConditions._id id) ]
@@ -111,6 +134,11 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
     let vread _type _id versionId req =
         let id = TypeId.From _type _id
+        log.Trace("vread", [
+            "type" => _type
+            "id" => _id
+            "versionId" => versionId
+        ])
         ensureTypeSupported _type
 
         SQL.readVersion versionId |> runQuery |> respondWithSingleResource id
@@ -126,6 +154,10 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         failwithf "not implemented"
 
     let search _type req =
+        log.Trace("search", [
+            "type" => _type
+            "req" => req
+        ])
         ensureTypeSupported _type
 
         let results =
@@ -156,6 +188,9 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                     |]
             }
 
+        log.Trace("search results", [
+            "bundle" => bundle
+        ])
         bundle, respondWithBundle 200 bundle
 
     let respondAsClientPrefers status (req: Request) resource json =
@@ -168,6 +203,10 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
     let updateVersionId (resource: JSON.IJsonElement) =
         let newVersionId = nextVersionId ()
         let newLastUpdated = currentTimestamp ()
+        log.Trace("updateVersionId", [
+            "newVersionId" => newVersionId
+            "newLastUpdated" => newLastUpdated
+        ])
 
         resource.SetString([ "meta"; "versionId" ], newVersionId)
         resource.SetString([ "meta"; "lastUpdated" ], newLastUpdated)
@@ -188,6 +227,10 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
             if deleted then
                 raiseOO 404 Deleted $"referenced resource is deleted (%s{ref})"
+            else
+                log.Trace("checkTypeIdReference ok", [
+                    "ref" => ref
+                ])
 
         | _ -> failwithf $"multiple resources for reference (%s{ref})!"
 
@@ -210,13 +253,23 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
 
     let storeResource mode id meta (resource: JSON.IJsonElement) =
+        log.Trace("storeResource", [
+            "mode" => mode
+            "id" => id
+            "meta" => meta
+        ])
+
         // get references
         let references = JSON.HashSetOfStrings()
 
         match mode with
         | CheckRefsIndexAndStore
         | PreliminaryIndexing _
-        | IndexAndStore -> JSON.collectReferences references resource
+        | IndexAndStore ->
+            JSON.collectReferences references resource
+            log.Trace("storeResource references", [
+                "references" => references
+            ])
         | StoreOnly -> ()
 
         // process references if required
@@ -242,6 +295,9 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         | IndexAndStore
         | StoreOnly ->
             let json = resource.ToString()
+            log.Trace("storeResource inserting version", [
+                "json" => json
+            ])
             SQL.insertResourceVersion id meta json |> runCommand
             json
 
@@ -295,6 +351,12 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 else
                     // find existing versionId (to delete old index entries)
                     let versionIdResult = SQL.indexQuery (SQL.IndexConditions._id id) |> runQuery
+
+                    log.Debug("PUT", [
+                        "type" => _type
+                        "id" => _id
+                        "oldVersionId" => versionIdResult
+                    ])
 
                     match versionIdResult with
                     | [ [| existingVersionId |] ] ->
@@ -450,7 +512,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                         let preliminaryIndex cmd =
                             dbImpl.RunSql(cmd "preliminary-index") |> ignore
 
-                        SQL.Savepoint |> preliminaryIndex
+                        preliminaryIndex SQL.Savepoint
 
                         let allReferences = JSON.HashSetOfStrings()
 
@@ -550,7 +612,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                                 )
                             // indexed references need to be re-done
                             // TODO: may be able to only undo affected resources
-                            SQL.SavepointRollback |> preliminaryIndex
+                            preliminaryIndex SQL.SavepointRollback
                             storeResource IndexAndStore
                         else
                             // preliminary index should be good
@@ -558,7 +620,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                             // storeResource StoreOnly
 
                             // need to roll-back to restore counters
-                            SQL.SavepointRollback |> preliminaryIndex
+                            preliminaryIndex SQL.SavepointRollback
                             storeResource IndexAndStore
                     else
                         // batch
@@ -687,6 +749,10 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                             | Some _ -> raiseOO 400 Value "invalid value for Prefer header"
                             | None -> None
                     }
+                
+                log.Debug("HandleRequest", [
+                    "req" => req
+                ])
 
                 let res =
                     let storageFunction = storeResource CheckRefsIndexAndStore
@@ -698,8 +764,8 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                     | "DELETE" -> DELETE req
                     | _ -> raiseOO 405 Value "method not allowed"
 
-                for v, name in
-                    [ res.ETag, "ETag"; res.Location, "Location"; res.LastUpdated, "Last-Modified" ] do
+                for name, v in
+                    [  "ETag", res.ETag;  "Location", res.Location; "Last-Modified", res.LastUpdated] do
                     v |> Option.iter (fun v -> setHeader.Invoke(name, v))
 
                 res
@@ -707,3 +773,9 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
             with
             | OperationOutcomeException (status, oo) -> respondWithOO status oo
             | ex -> respondWithOO 500 (operationOutcome Error Exception (ex.ToString()))
+  
+#if FABLE_COMPILER
+        member _.SetLogDestination(url: string) =
+            LotusLogger.Logger.Sink <- LotusLogger.Sinks.HttpSink(url) :> LotusLogger.Sinks.ISink
+            ()
+#endif

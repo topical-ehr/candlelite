@@ -4,7 +4,6 @@ import { CandleLiteServer } from "./candlelite_js/CandleLite.Core/Server";
 import { defaultParametersMap } from "./candlelite_js/CandleLite.Core/SearchParameters";
 import { JsJSON } from "./candlelite_js/JsJSON";
 import { JsSQLiteImpl } from "./candlelite_js/JsSQLite";
-import DateTime from './candlelite_js/fable_modules/fable-library.4.0.0-theta-018/Date';
 
 document.querySelector('#app').innerHTML = `
   <div>
@@ -13,7 +12,7 @@ document.querySelector('#app').innerHTML = `
   </div>
 `;
 function log(str) {
-  const elt = document.createElement("div");
+  const elt = document.createElement("pre");
   elt.textContent = str;
 
   document.getElementById("logs").appendChild(elt);
@@ -39,12 +38,14 @@ sqlite3InitModule({
 
   const server = new CandleLiteServer(config, dbImpl, new JsJSON(true));
   log("CandleLite Server created");
+  server.SetLogDestination("http://localhost:5000/logs/candlelite");
 
   let resp = server.HandleRequest("GET", "/fhir/Patient", "/fhir/", "", getHeader, setHeader);
   console.log(resp);
   log("/Patient: " + resp.BodyString);
 
-  let sampleData = await (await fetch("/fhir-sample-data/Aaron697_Stiedemann542_41166989-975d-4d17-b9de-17f94cb3eec1.json")).text();
+//  let sampleData = await (await fetch("/fhir-sample-data/Aaron697_Stiedemann542_41166989-975d-4d17-b9de-17f94cb3eec1.json")).text();
+  let sampleData = await (await fetch("/fhir-sample-data/Aaron697_Stiedemann542_small.json")).text();
   resp = server.HandleRequest("POST", "/fhir/", "/fhir/", sampleData, getHeader, setHeader);
   log("Load sample data: " + resp.BodyString);
 

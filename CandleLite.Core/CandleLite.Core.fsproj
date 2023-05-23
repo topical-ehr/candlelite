@@ -16,4 +16,7 @@
     <Compile Include="ServerUtils.fs" />
     <Compile Include="Server.fs" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="LotusLogger" Version="1.0.8" />
+  </ItemGroup>
 </Project>

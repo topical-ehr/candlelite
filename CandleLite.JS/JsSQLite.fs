@@ -25,7 +25,13 @@ module Object =
 /// See https://sqlite.org/wasm/doc/ckout/index.md
 type JsSQLiteImpl(filename: string, sqlite3: ISQLite3) =
 
-    do printfn "SQLite version %s (%s)" (sqlite3.capi.sqlite3_libversion()) (sqlite3.capi.sqlite3_sourceid())
+    let log = LotusLogger.Logger()
+
+    do log.Info("Opening sqlite db", [
+        "filename" => filename
+        "sqlite_version" => sqlite3.capi.sqlite3_libversion()
+        "sqlite_sourceid" => sqlite3.capi.sqlite3_sourceid()
+    ])
 
     let db = createNew sqlite3.oo1?DB ("/" + filename, "ct")
 
@@ -39,6 +45,7 @@ type JsSQLiteImpl(filename: string, sqlite3: ISQLite3) =
 
         if resultRows.Length = 0 then
             // execute schema creation commands
+            log.Debug("creating schema")
             db?exec(Sqlite.schema) |> ignore
 
     do createDB ()
@@ -50,8 +57,6 @@ type JsSQLiteImpl(filename: string, sqlite3: ISQLite3) =
             let sql = Sqlite.GenerateSQL statement
             let _params = sql.Parameters |> Array.ofList |> Object.fromEntries
 
-            printfn "SQL: %s: %A" sql.SQL sql.Parameters
-
             let resultRows = [||]
 
             try
@@ -61,9 +66,16 @@ type JsSQLiteImpl(filename: string, sqlite3: ISQLite3) =
                     "bind" ==> _params
                     "resultRows" ==> resultRows
                 ])
+                log.Debug("query results", [
+                    "sql" => sql
+                    "rows" => resultRows
+                ])
             with
             | exn ->
-                eprintf "SQLite query error: %A" exn
+                log.Debug("query error", [
+                    "sql" => sql
+                    "error" => exn
+                ])
                 JS.debugger()
 
             resultRows
