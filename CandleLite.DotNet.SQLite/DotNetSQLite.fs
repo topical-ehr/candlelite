@@ -14,7 +14,7 @@ type DotNetSQLiteImpl(connectionString: string) =
 
     let runNonQuery sql =
         log.Trace("executing commands", [
-            "sql" => sql,
+            "sql" => sql
         ])
         let cmd = conn.CreateCommand()
         cmd.CommandText <- sql

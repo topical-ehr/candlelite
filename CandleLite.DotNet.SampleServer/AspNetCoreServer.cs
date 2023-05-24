@@ -23,6 +23,7 @@ public class AspNetCoreServer
     {
         // Start HTTP server using the .NET 6 "Minimal API" (https://docs.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis?view=aspnetcore-6.0)
         var builder = WebApplication.CreateBuilder(args);
+        builder.Services.AddHttpClient();
         var app = builder.Build();
 
 
@@ -33,16 +34,15 @@ public class AspNetCoreServer
             TimeSpan.FromSeconds(1),
             app.Services.GetRequiredService<ILoggerFactory>()
         );
-        Logger.SessionId = Guid.NewGuid().ToString();
-
+        Logger.Component = "CandleLite";
+        Logger.InstanceId = Guid.NewGuid().ToString();
 
         app.Urls.Add($"http://*:{port}");
-
 
         app.UseDeveloperExceptionPage();
         app.UseStatusCodePages();
 
-        app.MapGet("/", () => $"Hello!\nRunning from {Environment.CurrentDirectory}");
+        app.MapGet("/", () => $"Hello!\nCandleLite sample FHIR server is running from {Environment.CurrentDirectory}");
 
         app.MapMethods(
             "/fhir/{*path}",
