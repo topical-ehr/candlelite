@@ -40,6 +40,9 @@ let conditionsForParam
     (p: FhirParameter)
     =
     match paramType with
+    | Type.Reference -> 
+        IndexConditions.valueEqual resourceType p.Name p.Value
+
     | Type.String -> 
         IndexConditions.valueEqual resourceType p.Name (p.Value.ToLower())
 
@@ -60,7 +63,7 @@ let conditionsForParam
 
         | _ -> raiseOO 400 OperationOutcomeCodes.Value (sprintf "invalid token parameter for %s/%s" resourceType p.Name)
 
-    | _ -> raiseOO 404 Not_Supported (sprintf "search parameter not supported (%s/%s)" resourceType p.Name)
+    | _ -> raiseOO 404 Not_Supported (sprintf "search parameter type %A not supported (%s/%s)" paramType resourceType p.Name)
 
 
 let conditionsFromUrl

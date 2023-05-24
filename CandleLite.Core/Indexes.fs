@@ -32,6 +32,7 @@ type IndexedValues =
                 box str
 
         match this with
+        // return (value, system, isRef)
         | Id _id -> box _id, null, null
         | Number n -> box n, null, null
         | Reference ref -> box ref.TypeId, null, box 1

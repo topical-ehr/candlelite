@@ -118,19 +118,19 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
     let ensureTypeSupported _type =
         if not <| Map.containsKey _type config.SearchParameters then
-            raiseOO 404 Not_Supported "resource type not supported"
+            raiseOO 404 Not_Supported <| sprintf "resource type not supported (%s)" _type
 
     let read _type _id req =
-        let id = TypeId.From _type _id
+        let typeId = TypeId.From _type _id
         log.Trace("read", [
             "type" => _type
             "id" => _id
         ])
         ensureTypeSupported _type
 
-        SQL.readResourcesViaIndex [ (SQL.IndexConditions._id id) ]
+        SQL.readResourcesViaIndex [ (SQL.IndexConditions._id typeId) ]
         |> runQuery
-        |> respondWithSingleResource id
+        |> respondWithSingleResource typeId
 
     let vread _type _id versionId req =
         let id = TypeId.From _type _id
@@ -306,10 +306,10 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
         match req.URL.PathSegments with
         | [| _type; _id |] ->
-            let id = TypeId.From _type _id
+            let typeId = TypeId.From _type _id
 
             // find existing versionId (to delete old index entries)
-            let versionIdResult = SQL.indexQuery (SQL.IndexConditions._id id) |> runQuery
+            let versionIdResult = SQL.indexQuery (SQL.IndexConditions._id typeId) |> runQuery
 
             match versionIdResult with
             | [ [| existingVersionId |] ] ->
@@ -324,11 +324,11 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                         JSON.LastUpdated = newLastUpdated
                     }
 
-                SQL.insertDeletion id meta |> runCommand
+                SQL.insertDeletion typeId meta |> runCommand
 
                 respondWith 204 null ""
 
-            | _ -> raiseOO 404 Not_Found $"existing resource not found ({id.TypeId})"
+            | _ -> raiseOO 404 Not_Found $"existing resource not found ({typeId.TypeId})"
 
 
         | _ -> raiseOO 400 Value "invalid path in URL"
@@ -338,7 +338,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
         match req.URL.PathSegments with
         | [| _type; _id |] ->
-            let id = TypeId.From _type _id
+            let typeId = TypeId.From _type _id
 
             match req.Body with
             | None -> raiseOO 400 Structure "not JSON body in PUT (update) request"
@@ -346,11 +346,11 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 // for now we don't allow client-generated IDs
                 let idFromResource = JSON.resourceId resource
 
-                if id <> idFromResource then
+                if typeId <> idFromResource then
                     raiseOO 400 Value "type and id in URL don't match the resource"
                 else
                     // find existing versionId (to delete old index entries)
-                    let versionIdResult = SQL.indexQuery (SQL.IndexConditions._id id) |> runQuery
+                    let versionIdResult = SQL.indexQuery (SQL.IndexConditions._id typeId) |> runQuery
 
                     log.Debug("PUT", [
                         "type" => _type
@@ -364,14 +364,14 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                         Indexes.deleteIndexForVersion (string existingVersionId) |> runCommand
 
                         let meta = updateVersionId resource
-                        let json = storeResource id meta resource
+                        let json = storeResource typeId meta resource
 
                         // respond
                         respondAsClientPrefers 200 req resource json
                         |> addETagAndLastUpdated resource
-                        |> addLocation id meta
+                        |> addLocation typeId meta
 
-                    | _ -> raiseOO 404 Not_Found $"existing resource not found ({id.TypeId})"
+                    | _ -> raiseOO 404 Not_Found $"existing resource not found ({typeId.TypeId})"
 
 
         | _ -> raiseOO 400 Value "invalid path in URL"
@@ -751,6 +751,9 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                     }
                 
                 log.Debug("HandleRequest", [
+                    "method" => method
+                    "urlPath" => urlPath
+                    "urlPathWithoutBase" => urlPathWithoutBase
                     "req" => req
                 ])
 
