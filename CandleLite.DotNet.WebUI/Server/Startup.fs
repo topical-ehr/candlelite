@@ -10,6 +10,7 @@ open Bolero.Remoting.Server
 open Bolero.Server
 open CandleLite.DotNet.WebUI
 open Bolero.Templating.Server
+open System
 
 type Startup() =
 
@@ -19,12 +20,15 @@ type Startup() =
         services.AddMvc() |> ignore
         services.AddServerSideBlazor() |> ignore
         services
+            .AddResponseCompression(fun options ->
+                options.EnableForHttps <- true
+            )
             .AddAuthorization()
             .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
                 .AddCookie()
                 .Services
             .AddRemoting<BookService>()
-            .AddBoleroHost(server=false, devToggle=true, prerendered=false)
+            .AddBoleroHost(server=true, devToggle=true, prerendered=false)
 #if DEBUG
             .AddHotReload(templateDir = __SOURCE_DIRECTORY__ + "/../Client")
 #endif
@@ -33,6 +37,7 @@ type Startup() =
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
     member this.Configure(app: IApplicationBuilder, env: IWebHostEnvironment) =
         app
+            .UseResponseCompression()
             .UseAuthentication()
             .UseRemoting()
             .UseStaticFiles()
@@ -43,7 +48,9 @@ type Startup() =
                 endpoints.UseHotReload()
 #endif
                 endpoints.MapBlazorHub() |> ignore
-                endpoints.MapFallbackToBolero(Index.page) |> ignore)
+                endpoints.MapFallbackToBolero(Index.page) |> ignore
+            )
+
         |> ignore
 
 module Program =

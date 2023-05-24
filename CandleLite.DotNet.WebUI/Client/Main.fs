@@ -11,8 +11,8 @@ open Microsoft.JSInterop
 
 /// Routing endpoints definition.
 type Page =
-    | [<EndPoint "/">] Home
-    | [<EndPoint "/play">] Play
+    | [<EndPoint "/">] Play
+    | [<EndPoint "/about">] About
     | [<EndPoint "/counter">] Counter
     | [<EndPoint "/data">] Data
 
@@ -58,7 +58,7 @@ and Book =
 
 let initModel =
     {
-        page = Home
+        page = Play
         request = { method = "GET"; path = "Patient"; body = "" }
         responses = []
         loading = false
@@ -75,24 +75,6 @@ let initModel =
 type BookService =
     {
         sendRequest: FhirRequest -> Async<FhirResponse list>
-
-        /// Get the list of all books in the collection.
-        getBooks: unit -> Async<Book[]>
-
-        /// Add a book in the collection.
-        addBook: Book -> Async<unit>
-
-        /// Remove a book from the collection, identified by its ISBN.
-        removeBookByIsbn: string -> Async<unit>
-
-        /// Sign into the application.
-        signIn : string * string -> Async<option<string>>
-
-        /// Get the user's name, or None if they are not authenticated.
-        getUsername : unit -> Async<string>
-
-        /// Sign out from the application.
-        signOut : unit -> Async<unit>
     }
 
     interface IRemoteService with
@@ -156,29 +138,6 @@ let update  (js: IJSRuntime) remote message model =
     | SetCounter value ->
         { model with counter = value }, Cmd.none
 
-    | GetBooks ->
-        let cmd = Cmd.OfAsync.either remote.getBooks () GotBooks Error
-        { model with books = None }, cmd
-    | GotBooks books ->
-        { model with books = Some books }, Cmd.none
-
-    | SetUsername s ->
-        { model with username = s }, Cmd.none
-    | SetPassword s ->
-        { model with password = s }, Cmd.none
-    | GetSignedInAs ->
-        model, Cmd.OfAuthorized.either remote.getUsername () RecvSignedInAs Error
-    | RecvSignedInAs username ->
-        { model with signedInAs = username }, onSignIn username
-    | SendSignIn ->
-        model, Cmd.OfAsync.either remote.signIn (model.username, model.password) RecvSignIn Error
-    | RecvSignIn username ->
-        { model with signedInAs = username; signInFailed = Option.isNone username }, onSignIn username
-    | SendSignOut ->
-        model, Cmd.OfAsync.either remote.signOut () (fun () -> RecvSignOut) Error
-    | RecvSignOut ->
-        { model with signedInAs = None; signInFailed = false }, Cmd.none
-
     | Error RemoteUnauthorizedException ->
         { model with error = Some "You have been logged out."; signedInAs = None }, Cmd.none
 
@@ -192,8 +151,8 @@ let router = Router.infer SetPage (fun model -> model.page)
 
 type Main = Template<"wwwroot/main.html">
 
-let homePage model dispatch =
-    Main.Home().Elt()
+let aboutPage model dispatch =
+    Main.About().Elt()
 
 let playPage model dispatch =
     Main.Play()
@@ -274,14 +233,14 @@ let view model dispatch =
     Main()
         .Menu(concat {
             menuItem model Play "Play"
-            menuItem model Home "Home"
             menuItem model Counter "Counter"
             menuItem model Data "Download data"
+            menuItem model About "About"
         })
         .Body(
             cond model.page <| function
             | Play -> playPage model dispatch
-            | Home -> homePage model dispatch
+            | About -> aboutPage model dispatch
             | Counter -> counterPage model dispatch
             | Data ->
                 cond model.signedInAs <| function
@@ -303,10 +262,12 @@ type MyApp() =
     inherit ProgramComponent<Model, Message>()
 
     override this.Program =
+
         let bookService = this.Remote<BookService>()
         let update = update this.JSRuntime bookService
         Program.mkProgram (fun _ -> initModel, Cmd.ofMsg GetSignedInAs) update view
         |> Program.withRouter router
 #if DEBUG
         |> Program.withHotReload
+        |> Program.withConsoleTrace
 #endif
