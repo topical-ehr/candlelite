@@ -8,14 +8,18 @@ open CandleLite.Core.Server
 let inline (=>) (name: string) (value) = struct (name, box value)
 
 type DotNetSQLiteImpl(connectionString: string) =
-    let log = LotusLogger.Logger()
+    let log = LMLogger.Logger()
 
-    let conn = new SqliteConnection(connectionString)
+    let connect() =
+        let conn = new SqliteConnection(connectionString)
+        conn.Open()
+        conn
 
     let runNonQuery sql =
         log.Trace("executing commands", [
             "sql" => sql
         ])
+        use conn = connect()
         let cmd = conn.CreateCommand()
         cmd.CommandText <- sql
         cmd.ExecuteNonQuery() |> ignore
@@ -23,6 +27,7 @@ type DotNetSQLiteImpl(connectionString: string) =
     let createDB () =
 
         // check if have tables
+        use conn = connect()
         let cmd = conn.CreateCommand()
         cmd.CommandText <- "PRAGMA table_info('versions');"
         let reader = cmd.ExecuteReader()
@@ -32,7 +37,6 @@ type DotNetSQLiteImpl(connectionString: string) =
             log.Info("creating schema")
             runNonQuery Sqlite.schema
 
-    do conn.Open()
     do createDB ()
 
     static member InMemory() =
@@ -59,6 +63,7 @@ type DotNetSQLiteImpl(connectionString: string) =
                 // TODO: cache the command for better performance
                 // https://www.bricelam.net/2017/07/20/sqlite-bulk-insert.html
 
+                use conn = connect()
                 use cmd = conn.CreateCommand()
                 cmd.CommandText <- sql.SQL
 
