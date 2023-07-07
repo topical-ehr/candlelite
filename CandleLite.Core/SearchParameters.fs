@@ -88,6 +88,16 @@ let parameters =
 
             "active", indexBool [ "active" ]
         ]
+
+
+        "ServiceRequest",
+        [
+            identifier
+            "code", codeableConcept "code"
+            "category", codeableConcept "category"
+            reference "encounter"
+            reference "subject"
+        ]
     ]
 
 let defaultParametersMap: ParametersMap = parameters |> Map.ofList
