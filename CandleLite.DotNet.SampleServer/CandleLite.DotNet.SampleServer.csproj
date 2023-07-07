@@ -10,7 +10,7 @@
     <ProjectReference Include="..\CandleLite.Core\CandleLite.Core.fsproj" />
     <ProjectReference Include="..\CandleLite.DotNet.JSON\CandleLite.DotNet.JSON.fsproj" />
     <ProjectReference Include="..\CandleLite.DotNet.SQLite\CandleLite.DotNet.SQLite.fsproj" />
-    <ProjectReference Include="..\AdaptiLogger.Client\LotusLogger.Client.fsproj" />
+    <ProjectReference Include="..\LMLogger.Client\LMLogger.Client.fsproj" />
   </ItemGroup>
 
 </Project>
