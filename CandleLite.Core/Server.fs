@@ -42,7 +42,7 @@ let inline (=>) (name: string) (value) = struct (name, box value)
 
 type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl: ICandleLiteJSON) =
 
-    let log = LotusLogger.Logger()
+    let log = LMLogger.Logger()
 
     let runQuery = dbImpl.RunSql
     let runCommand = dbImpl.RunSql >> ignore
@@ -779,6 +779,6 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
   
 #if FABLE_COMPILER
         member _.SetLogDestination(url: string) =
-            LotusLogger.Logger.Sink <- LotusLogger.Sinks.HttpSink(url) :> LotusLogger.Sinks.ISink
+            LMLogger.Logger.Sink <- LMLogger.Sinks.HttpSink(url) :> LMLogger.Sinks.ISink
             ()
 #endif

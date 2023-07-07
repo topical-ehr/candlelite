@@ -23,7 +23,7 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CandleLite.DotNet.WebUI.Ser
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CandleLite.JS", "CandleLite.JS\CandleLite.JS.fsproj", "{78BE3D75-AF41-4529-87D4-B1B66F41C3F5}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "LotusLogger.Client", "AdaptiLogger.Client\LotusLogger.Client.fsproj", "{B1A14942-E324-451F-9EAD-891A62BBC4E3}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "LMLogger.Client", "LMLogger.Client\LMLogger.Client.fsproj", "{B1A14942-E324-451F-9EAD-891A62BBC4E3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

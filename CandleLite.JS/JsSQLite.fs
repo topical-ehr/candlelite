@@ -25,7 +25,7 @@ module Object =
 /// See https://sqlite.org/wasm/doc/ckout/index.md
 type JsSQLiteImpl(filename: string, sqlite3: ISQLite3) =
 
-    let log = LotusLogger.Logger()
+    let log = LMLogger.Logger()
 
     do log.Info("Opening sqlite db", [
         "filename" => filename

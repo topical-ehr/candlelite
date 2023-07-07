@@ -17,6 +17,6 @@
     <Compile Include="Server.fs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\AdaptiLogger.Client\LotusLogger.Client.fsproj" />
+    <ProjectReference Include="..\LMLogger.Client\LMLogger.Client.fsproj" />
   </ItemGroup>
 </Project>
