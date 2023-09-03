@@ -65,6 +65,16 @@ let GenerateSQL (statement: Statement) =
             )
             |> String.concat " AND "
 
+        let convertOrderBy (order: Order list) =
+            match order with
+            | [] -> ""
+            | order ->
+                let cols =
+                    order
+                    |> List.map (fun col -> col.Column + (if col.Ascending then "" else " DESC"))
+                    |> String.concat ", "
+                "ORDER BY " + cols
+
 
         let generateReturning returning =
             match returning with
@@ -76,7 +86,7 @@ let GenerateSQL (statement: Statement) =
         | Select select ->
             let cols = select.Columns |> String.concat ", "
 
-            $"SELECT {cols} FROM {Table.toString select.From} WHERE {convertWhere select.Where}"
+            $"SELECT {cols} FROM {Table.toString select.From} WHERE {convertWhere select.Where} {convertOrderBy select.Order}"
 
         | Insert insert ->
             let vals =

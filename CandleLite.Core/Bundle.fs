@@ -41,3 +41,13 @@ type Bundle =
 
 module BundleType =
     let SearchSet = "searchset"
+    let Document = "document"
+    let Message = "message"
+    let Transaction = "transaction"
+    let TransactionResponse = "transaction-response"
+    let Batch = "batch"
+    let BatchResponse = "batch-response"
+    let History = "history"
+    let Collection = "collection"
+    let SubscriptionNotification = "subscription-notification"
+

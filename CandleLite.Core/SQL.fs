@@ -39,11 +39,18 @@ and WhereCondition =
         Condition: Condition
     }
 
+and Order =
+    {
+        Column: string
+        Ascending: bool
+    }
+
 and Select =
     {
         Columns: string list
         From: Table.T
         Where: WhereCondition list
+        Order: Order list
     }
 
 
@@ -119,6 +126,7 @@ let indexSubquery condition =
             Columns = [ "versionId" ]
             From = Table.indexes
             Where = condition
+            Order = []
         }
 
 
@@ -128,6 +136,7 @@ let indexQuery conditions =
             Columns = [ "versionId" ]
             From = Table.indexes
             Where = conditions
+            Order = []
         }
 
 let readVersionsViaIndex columns conditions =
@@ -143,6 +152,7 @@ let readVersionsViaIndex columns conditions =
                             Condition = indexSubquery condition
                         }
                 ]
+            Order = []
         }
 
 let readResourcesViaIndex conditions =
@@ -164,6 +174,27 @@ let readVersion versionId =
                         Condition = Equal <| StringValue versionId
                     }
                 ]
+            Order = []
+        }
+
+
+let readResourceHistory (id: TypeId) =
+    Select
+        {
+            Columns = [ "versionId"; "lastUpdated"; "deleted"; "json" ]
+            From = Table.Versions
+            Where =
+                [
+                    {
+                        Column = "type"
+                        Condition = Equal <| StringValue id.Type
+                    }
+                    {
+                        Column = "id"
+                        Condition = Equal <| StringValue id.Id
+                    }
+                ]
+            Order = [{ Column="versionId"; Ascending=true; }]
         }
 
 let updateCounter name =

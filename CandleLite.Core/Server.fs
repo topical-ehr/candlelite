@@ -97,7 +97,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         | 0 -> raiseOO 404 Not_Found "not found"
         | 1 ->
             let json = results[0][0] |> string
-            let deleted = results[0][1] |> unbox<int64>
+            let deleted = results[0][1] |> unbox<int>
 
             if deleted = 1 then
                 raiseOO 410 Deleted "deleted"
@@ -144,8 +144,69 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         SQL.readVersion versionId |> runQuery |> respondWithSingleResource id
 
     let historyForId _type _id req =
-        let id = TypeId.From _type _id
-        failwithf "not implemented"
+        log.Trace("historyForId", [
+            "type" => _type
+            "id" => _id
+            "req" => req
+        ])
+        let typeId = TypeId.From _type _id
+        ensureTypeSupported _type
+
+        let results =
+            SQL.readResourceHistory typeId
+            |> runQuery
+
+        let fullUrl = Some <| typeId.TypeId
+
+        let bundle =
+            {
+                ResourceType = "Bundle"
+                Total = results.Length |> Some
+                Type = BundleType.History
+                Timestamp = currentTimestamp() |> Some
+                Link = None
+                Entry =
+                    Some [|
+                        for i, row in results |> Seq.indexed do
+                            let versionId = row[0] |> string
+                            let lastUpdated = row[1] |> string
+                            let deleted = row[2] :? bool
+                            let json = row[3] |> string
+
+                            let resource = jsonImpl.ParseJSON json
+
+                            let method =
+                                match deleted, i with
+                                | true, _ -> "DELETE"
+                                | false, 0 -> "POST"
+                                | false, _ -> "PUT"
+
+                            {
+                                FullUrl = fullUrl
+                                Resource = Some resource
+                                Request = Some <| {
+                                        Method = method
+                                        Url = if method = "POST" then _type else fullUrl.Value
+                                        IfNoneMatch = None
+                                        IfModifiedSince = None
+                                        IfMatch = None
+                                        IfNoneExist = None
+                                    }
+                                Response = Some <| {
+                                        Status = "200"
+                                        Location = None
+                                        Etag = None
+                                        LastModified = Some lastUpdated
+                                        Outcome = None
+                                    }
+                            }
+                    |]
+            }
+
+        log.Trace("search results", [
+            "bundle" => bundle
+        ])
+        bundle, respondWithBundle 200 bundle
 
     let historyForType _type req =
         failwithf "not implemented"
@@ -216,6 +277,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
             JSON.LastUpdated = newLastUpdated
         }
 
+    /// Raise exception if the given Type/Id is deleted or doesn't exist
     let checkTypeIdReference typeId =
         let rows = SQL.readIsDeletedViaIndex [ (SQL.IndexConditions._id typeId) ] |> runQuery
         let ref = typeId.TypeId
@@ -223,7 +285,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         match rows with
         | [] -> raiseOO 404 Not_Found $"reference doesn't exist (%s{ref})"
         | [ row ] ->
-            let deleted = (unbox<int64> row[0]) > 0
+            let deleted = (unbox<int> row[0]) > 0
 
             if deleted then
                 raiseOO 404 Deleted $"referenced resource is deleted (%s{ref})"
@@ -270,12 +332,14 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
             log.Trace("storeResource references", [
                 "references" => references
             ])
+
         | StoreOnly -> ()
 
         // process references if required
         match mode with
         | CheckRefsIndexAndStore -> checkReferencesExist references
         | PreliminaryIndexing allReferences -> allReferences.UnionWith references
+
         | IndexAndStore
         | StoreOnly -> ()
 
@@ -285,12 +349,13 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         | PreliminaryIndexing _
         | IndexAndStore ->
             Indexes.indexResource config.SearchParameters resource id meta references |> runCommand
+
         | StoreOnly -> ()
 
 
         // store json
         match mode with
-        | PreliminaryIndexing _ -> ""
+        | PreliminaryIndexing _ // still store, otherwise reference check fails...
         | CheckRefsIndexAndStore
         | IndexAndStore
         | StoreOnly ->
@@ -379,7 +444,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
     let GET (req: Request) =
 
         match req.URL.PathSegments with
-        | [| _type; _id; "_history" |] -> historyForId _type _id req
+        | [| _type; _id; "_history" |] -> historyForId _type _id req |> snd
         | [| _type; "_history" |] -> historyForType _type req
         | [| "_history" |] -> historyForServer req
 

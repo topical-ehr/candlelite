@@ -156,9 +156,14 @@ type JsJSON(?indent: bool) =
                 ]
 
             let encodeEntry (entry: Bundle.BundleEntry) =
+                let resource =
+                    match entry.Resource with
+                    | Some resource -> (resource :?> JsonViaJSObj).Object
+                    | None -> null
+
                 createObj [
                     "fullUrl" ==> entry.FullUrl
-                    "resource" ==> entry.Resource
+                    "resource" ==> resource
                     "request" ==> (Option.map encodeRequest entry.Request |> Option.defaultValue null)
                     "response" ==> (Option.map encodeResponse entry.Response |> Option.defaultValue null)
                 ]
@@ -170,12 +175,12 @@ type JsJSON(?indent: bool) =
                 ]
 
             createObj [
-                "ResourceType" ==> bundle.ResourceType
-                "Type" ==> bundle.Type
-                "Total" ==> bundle.Total
-                "Timestamp" ==> bundle.Timestamp
-                "Link" ==> (bundle.Link |> Option.defaultValue [||] |> Array.map encodeLink)
-                "Entry" ==> (bundle.Entry |> Option.defaultValue [||] |> Array.map encodeEntry)
+                "resourceType" ==> bundle.ResourceType
+                "type" ==> bundle.Type
+                "total" ==> bundle.Total
+                "timestamp" ==> bundle.Timestamp
+                "link" ==> (bundle.Link |> Option.defaultValue [||] |> Array.map encodeLink)
+                "entry" ==> (bundle.Entry |> Option.defaultValue [||] |> Array.map encodeEntry)
             ] |> toJSON
 
         member _.OutcomeToJSON(oo: OperationOutcome) =
@@ -192,14 +197,8 @@ type JsJSON(?indent: bool) =
                 )
             ] |> toJSON
 
-        // member this.ParseBundle(json: string) : Bundle.Bundle =
-        //     let o = JS.JSON.parse json
-        //     parseBundle o
-
         member this.ParseBundle(resource: JSON.IJsonElement) : Bundle.Bundle =
             let obj = (resource :?> JsonViaJSObj).Object
-
-            JS.debugger()
 
             match Decode.fromValue "$" bundleDecoder obj with
             | Ok decoded -> decoded
