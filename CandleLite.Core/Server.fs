@@ -648,6 +648,11 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                                 // normal resource reference
                                 checkTypeIdReference (TypeId.From _type _id)
 
+                            | numParams, [| _type; _id; "_history"; versionId |] when numParams = 0 ->
+                                // version-specific resource reference
+                                // TODO: check versionId
+                                checkTypeIdReference (TypeId.From _type _id)
+
                             | numParams, [| oid |] when numParams = 0 && oid.StartsWith("urn:uuid:") ->
                                 // placeholder UUID
                                 match fullUrlToResolvedId.TryGetValue oid with
