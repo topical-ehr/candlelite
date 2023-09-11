@@ -23,17 +23,11 @@ module Object =
 /// Compiled to JS using Fable
 /// 
 /// See https://sqlite.org/wasm/doc/ckout/index.md
-type JsSQLiteImpl(filename: string, sqlite3: ISQLite3) =
+type JsSQLiteImpl(db: obj, sqlite3: ISQLite3) =
 
     let log = LMLogger.Logger()
 
-    do log.Info("Opening sqlite db", [
-        "filename" => filename
-        "sqlite_version" => sqlite3.capi.sqlite3_libversion()
-        "sqlite_sourceid" => sqlite3.capi.sqlite3_sourceid()
-    ])
-
-    let db = createNew sqlite3.oo1?DB ("/" + filename, "ct")
+    do log.Info("Opening sqlite db")
 
     let createDB () =
         // check if have tables
@@ -67,7 +61,8 @@ type JsSQLiteImpl(filename: string, sqlite3: ISQLite3) =
                     "resultRows" ==> resultRows
                 ])
                 log.Debug("query results", [
-                    "sql" => sql
+                    "sql" => sql.SQL
+                    "params" => (sql.Parameters |> List.toArray)
                     "rows" => resultRows
                 ])
             with
