@@ -26,6 +26,39 @@ let parameters =
             "name", humanName [ "name" ]
         ]
 
+        "Practitioner",
+        [
+            identifier
+
+            "active", indexBool [ "active" ]
+            "birthdate", indexString [ "birthDate" ]
+            "gender", indexString [ "gender" ]
+            "death-date", indexDateTime [ "deceasedDateTime" ]
+            "deceased", indexTrueOrDateExists "deceased"
+
+            "email", contactPoints [ "telecom" ] (Some "email")
+            "phone", contactPoints [ "telecom" ] (Some "phone")
+            "telecom", contactPoints [ "telecom" ] None
+            "address", indexAddress [ "address" ]
+
+            "given", indexStrings [ "name"; "given" ]
+            "family", indexStrings [ "name"; "family" ]
+            "name", humanName [ "name" ]
+        ]
+
+        "PractitionerRole",
+        [
+            identifier
+            "active", indexBool [ "active" ]
+
+            reference "practitioner"
+            reference "organization"
+
+            "role", codeableConcept "code"
+            "specialty", codeableConcept "specialty"
+            "characteristic", codeableConcept "characteristic"
+        ]
+
         "Composition",
         [
             identifier
@@ -58,6 +91,17 @@ let parameters =
             "code", codeableConcept "code"
             "category", codeableConcept "category"
             "status", indexString [ "status" ]
+
+            reference "encounter"
+            reference "subject"
+        ]
+
+        "MedicationAdministration",
+        [
+            identifier
+
+            "category", codeableConcept "category"
+            "status", indexString ["status"]
 
             reference "encounter"
             reference "subject"
