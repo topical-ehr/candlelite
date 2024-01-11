@@ -96,6 +96,18 @@ let parameters =
             reference "subject"
         ]
 
+        "List",
+        [
+            identifier
+
+            "code", codeableConcept "code"
+            "category", codeableConcept "category"
+
+            reference "encounter"
+            reference "source"
+            reference "subject"
+        ]
+
         "MedicationAdministration",
         [
             identifier
@@ -141,6 +153,14 @@ let parameters =
             "category", codeableConcept "category"
             reference "encounter"
             reference "subject"
+        ]
+
+        "Task",
+        [
+            identifier
+            "code", codeableConcept "code"
+            reference "encounter"
+            referenceWithNameAndProperty "subject" "for"
         ]
     ]
 

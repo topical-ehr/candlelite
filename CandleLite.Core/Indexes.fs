@@ -88,19 +88,22 @@ let getSystemCode (elt: JSON.IJsonElement) =
 let identifier =
     "identifier", indexer Type.Token <| (getElements [ "identifier" ] >> (List.map (getSystemValue)))
 
+let getReference name (elt: JSON.IJsonElement) =
+    let parseReference (str: string) =
+        match str.Split "/" with
+        | [| _type; id |] -> [ Reference { Type = _type; Id = id } ]
+        | [| placeholder |] when placeholder.StartsWith("urn:uuid:") -> []
+        | [| hashtag |] when hashtag.StartsWith("#") -> [] // TODO: verify is a contained resource
+
+        | _ -> failwithf "unable to parse reference in %s: %s" name str
+
+    elt.GetString [ "reference" ] |> parseReference
+
 let reference name =
-    let getReference (elt: JSON.IJsonElement) =
-        let parseReference (str: string) =
-            match str.Split "/" with
-            | [| _type; id |] -> [ Reference { Type = _type; Id = id } ]
-            | [| placeholder |] when placeholder.StartsWith("urn:uuid:") -> []
-            | [| hashtag |] when hashtag.StartsWith("#") -> [] // TODO: verify is a contained resource
+    name, indexer Type.Reference <| (getElements [ name ] >> (List.collect (getReference name)))
 
-            | _ -> failwithf "unable to parse reference in %s: %s" name str
-
-        elt.GetString [ "reference" ] |> parseReference
-
-    name, indexer Type.Reference <| (getElements [ name ] >> (List.collect (getReference)))
+let referenceWithNameAndProperty name property =
+    name, indexer Type.Reference <| (getElements [ property ] >> (List.collect (getReference name)))
 
 let codeableConcept name =
     indexer Type.Token <| (getElements [ name; "coding" ] >> (List.map (getSystemCode)))
