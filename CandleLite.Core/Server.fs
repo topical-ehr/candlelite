@@ -602,7 +602,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                                     try
                                         fullUrlToResolvedId.Add(fullUrl, typeId)
                                     with
-                                    | :? System.ArgumentException ->
+                                    | _ ->
                                         raiseOO 400 Value $"Bundle has duplicate fullUrl {fullUrl}"
                                 | None, _ -> invalidOp "processEntry did not return a type/id"
                                 | _, None ->
