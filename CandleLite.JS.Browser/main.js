@@ -38,7 +38,7 @@ sqlite3InitModule({
 
   const server = new CandleLiteServer(config, dbImpl, new JsJSON(true));
   log("CandleLite Server created");
-  server.SetLogDestination("http://localhost:5000/logs/candlelite");
+  server.SetLogDestination("http://localhost:10000/logs/candlelite.js");
 
   let resp = server.HandleRequest("GET", "/fhir/Patient", "/fhir/", "", getHeader, setHeader);
   console.log(resp);

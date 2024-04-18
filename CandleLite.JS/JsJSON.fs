@@ -202,6 +202,6 @@ type JsJSON(?indent: bool) =
 
             match Decode.fromValue "$" bundleDecoder obj with
             | Ok decoded -> decoded
-            | Result.Error msg -> Utils.raiseOO 400 Structure msg
+            | Result.Error msg -> Utils.raiseOO 400 Structure ("Error parsing as Budle: " + msg)
 
 

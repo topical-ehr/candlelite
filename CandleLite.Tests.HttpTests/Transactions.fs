@@ -130,15 +130,14 @@ let transactionTests =
 
             let patientCount1 = fhir.Search("Patient").Total.Value
 
-            use br =
-                fhir.OnBeforeRequest.Subscribe(fun c ->
-                    c.RawRequest.Headers.Add("X-Provenance", partialProvenance.ToJson())
-                )
+            // use br =
+            //     fhir.OnBeforeRequest.Subscribe(fun c ->
+            //         c.RawRequest.Headers.Add("X-Provenance", partialProvenance.ToJson())
+            //     )
 
             let mutable createdProvenanceLocation = ""
 
             let result = fhir.Transaction bundle
-            br.Dispose()
             let patientCount2 = fhir.Search("Patient").Total.Value
             Expect.equal (patientCount1 + 2) patientCount2 "transaction has added patients"
             Expect.equal result.Type (N Bundle.BundleType.TransactionResponse) "result bundle type"

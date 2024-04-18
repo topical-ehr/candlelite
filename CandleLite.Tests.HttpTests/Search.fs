@@ -77,4 +77,4 @@ let searchTest =
         testParam (fhir, Requests.Search.ViaBatch) (searchTests "Batch" |> List.toSeq )
         testParam (fhir, Requests.Search.ViaTransaction) (searchTests "Transaction" |> List.toSeq )
     ]
-    ftestList "Search" (List.collect id (tests |> List.map Seq.toList))
+    testList "Search" (List.collect id (tests |> List.map Seq.toList))

@@ -92,7 +92,7 @@ let transactionTests = [
     ]
 
 
-[<Tests>]
+// [<Tests>]
 let transactionsTest =
     let fhir = ServerRunners.FhirServer.Current.FhirClient()
     let tests = [

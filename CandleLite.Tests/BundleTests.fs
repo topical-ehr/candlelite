@@ -221,13 +221,13 @@ let jsonImpl = DotNetJSON() :> Server.ICandleLiteJSON
 
 let checkBundle (bundle: Bundle.Bundle) =
     Assert.Equal("transaction", bundle.Type)
-    Assert.Equal("2015-08-31T08:14:33+10:00", bundle.Entry[9].Request.Value.IfModifiedSince.Value)
-    Assert.Equal(true, bundle.Entry[9].Request.Value.IfMatch.IsNone)
+    Assert.Equal("2015-08-31T08:14:33+10:00", bundle.Entry.Value[9].Request.Value.IfModifiedSince.Value)
+    Assert.Equal(true, bundle.Entry.Value[9].Request.Value.IfMatch.IsNone)
 
 [<Fact>]
 let ``Parse bundle`` () =
     // check deserialisation from string
-    jsonImpl.ParseBundle example_transaction |> checkBundle
+    example_transaction |> jsonImpl.ParseJSON |> jsonImpl.ParseBundle |> checkBundle
 
     // check deserialisation from JsonNode
     let node = JsonNode.Parse example_transaction |> JsonViaJsonNode
