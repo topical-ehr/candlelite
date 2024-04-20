@@ -96,6 +96,20 @@ let parameters =
             reference "subject"
         ]
 
+        "Encounter",
+        [
+            identifier
+
+            "status", indexString [ "status" ]
+            "class", indexString [ "class" ]
+
+            "type", codeableConcept "type"
+            "serviceType", codeableConcept "serviceType"
+            "priority", codeableConcept "priority"
+
+            reference "subject"
+        ]
+
         "List",
         [
             identifier
