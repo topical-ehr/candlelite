@@ -164,8 +164,14 @@ type JsJSON(?indent: bool) =
                 createObj [
                     "fullUrl" ==> entry.FullUrl
                     "resource" ==> resource
-                    "request" ==> (Option.map encodeRequest entry.Request |> Option.defaultValue null)
-                    "response" ==> (Option.map encodeResponse entry.Response |> Option.defaultValue null)
+                    "request" ==> (Option.map encodeRequest entry.Request |> Option.defaultValue JS.undefined)
+                    "response" ==> (Option.map encodeResponse entry.Response |> Option.defaultValue JS.undefined)
+                    match entry.Search with
+                    | Some search -> 
+                        "search" ==> createObj [
+                            "mode" ==> search.Mode.ToString().ToLowerInvariant()
+                        ]
+                    | None -> ()
                 ]
             
             let encodeLink (link: Bundle.BundleLink) =

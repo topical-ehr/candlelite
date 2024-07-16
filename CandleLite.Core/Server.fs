@@ -199,6 +199,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                                         LastModified = Some lastUpdated
                                         Outcome = None
                                     }
+                                Search = None
                             }
                     |]
             }
@@ -221,30 +222,44 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         ])
         ensureTypeSupported _type
 
-        let results =
-            Search.conditionsFromUrl config.SearchParameters _type req.URL.Parameters
-            |> SQL.readResourcesViaIndex
-            |> runQuery
+        let includes = Search.includesFromURL _type req.URL.Parameters
+
+        let conditions = Search.conditionsFromUrl config.SearchParameters _type req.URL.Parameters
+
+        let sql = Search.makeSearchSQL conditions includes
+        
+        let results = runQuery sql
+
+        let total =
+            match includes.Length with
+            | 0 -> results.Length
+            | _ -> results |> List.filter (fun row -> row[0] = "match") |> List.length
 
         let bundle =
             {
                 ResourceType = "Bundle"
-                Total = results.Length |> Some
+                Total = Some total
                 Type = BundleType.SearchSet
                 Timestamp = currentTimestamp () |> Some
                 Link = None
                 Entry =
                     Some [|
                         for row in results do
-                            let json = row[0] |> string
+                            let json = row[1] |> string
                             let resource = jsonImpl.ParseJSON json
                             let idFromResource = JSON.resourceId resource
+                            let mode =
+                                match string row[0] with
+                                | "match" -> Match
+                                | "include" -> Include
+                                | _ -> raiseOO 500 Value "invalid search mode in results"
 
                             {
                                 FullUrl = Some <| idFromResource.TypeId
                                 Resource = Some resource
                                 Request = None
                                 Response = None
+                                Search = Some { Mode = mode }
                             }
                     |]
             }
@@ -520,6 +535,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                     FullUrl = None
                     Resource = Some res.BodyResource
                     Request = None
+                    Search = None
                     Response =
                         Some
                             {
@@ -729,6 +745,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                                 FullUrl = None
                                 Resource = Some (respondWithOO status oo).BodyResource
                                 Request = None
+                                Search = None
                                 Response =
                                     Some
                                         {

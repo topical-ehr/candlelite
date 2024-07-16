@@ -1,3 +1,3 @@
 #! /bin/bash
 set -ex
-cp -ra candlelite_js/* ~/topical-ehr/packages/candlelite/
+cp -ra candlelite_js/* ~/src/topical-ehr/packages/candlelite/

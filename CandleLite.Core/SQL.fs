@@ -10,6 +10,8 @@ module Table =
     let indexes = T "indexes"
     let Sequences = T "sequences"
 
+    let Expression expr = T expr
+
 // type Table = Table of string
 // let versionsTable = Table "versions"
 
@@ -32,6 +34,7 @@ type ColumnUpdateValue = { Column: string; Value: UpdateValue }
 type Condition =
     | Equal of Value
     | InSubquery of Select
+    | InCTE of string
 
 and WhereCondition =
     {
@@ -81,12 +84,21 @@ type Statement =
     | Insert of Insert
     | Update of Update
     | Delete of Delete
+    | SelectWithCTE of SelectWithCTE
+    | SelectIntersect of Select list
+    | SelectUnion of Select list
     | Savepoint of string
     | SavepointRelease of string
     | SavepointRollback of string
     | TransactionBeginImmediate
     | TransactionCommit
     | TransactionRollback
+
+and SelectWithCTE =
+    {
+        CTEs: (string * Statement) list
+        Select: Statement
+    }
 
 
 type GeneratedSQL =
@@ -140,19 +152,32 @@ let indexQuery conditions =
         }
 
 let readVersionsViaIndex columns conditions =
-    Select
+    SelectWithCTE
         {
-            Columns = columns
-            From = Table.Versions
-            Where =
-                [
+            CTEs = [
+                "searchVersionIds",
+                SelectIntersect [
                     for condition in conditions do
                         {
-                            Column = "versionId"
-                            Condition = indexSubquery condition
+                            Columns = [ "versionId" ]
+                            From = Table.indexes
+                            Where = condition
+                            Order = []
                         }
                 ]
-            Order = []
+            ]
+            Select = Select {
+                Columns = columns
+                From = Table.Versions
+                Where =
+                    [
+                        {
+                            Column = "versionId"
+                            Condition = InCTE "searchVersionIds"
+                        }
+                    ]
+                Order = []
+            }
         }
 
 let readResourcesViaIndex conditions =

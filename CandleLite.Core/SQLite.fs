@@ -54,16 +54,22 @@ let GenerateSQL (statement: Statement) =
     let rec toSQL (st: Statement) =
 
         let convertWhere (where: WhereCondition list) =
-            where
-            |> List.map (fun cond ->
-                cond.Column
-                + (
-                    match cond.Condition with
-                    | Equal v -> $" = {newParam <| valueToObj v}"
-                    | InSubquery x -> $" IN ({toSQL <| Select x})"
-                )
-            )
-            |> String.concat " AND "
+            match where with
+            | [] -> ""
+            | where ->
+                let str =
+                    where
+                    |> List.map (fun cond ->
+                        cond.Column
+                        + (
+                            match cond.Condition with
+                            | Equal v -> $" = {newParam <| valueToObj v}"
+                            | InSubquery x -> $" IN ({toSQL <| Select x})"
+                            | InCTE cteName -> $" IN {cteName}"
+                        )
+                    )
+                    |> String.concat " AND "
+                "WHERE " + str
 
         let convertOrderBy (order: Order list) =
             match order with
@@ -86,7 +92,21 @@ let GenerateSQL (statement: Statement) =
         | Select select ->
             let cols = select.Columns |> String.concat ", "
 
-            $"SELECT {cols} FROM {Table.toString select.From} WHERE {convertWhere select.Where} {convertOrderBy select.Order}"
+            $"SELECT {cols} FROM {Table.toString select.From} {convertWhere select.Where} {convertOrderBy select.Order}"
+
+        | SelectWithCTE selectWithCTE ->
+
+            let ctes =
+                selectWithCTE.CTEs
+                |> List.map (fun (name, select) -> $"%s{name} AS (%s{toSQL select})")
+                |> String.concat ", "
+            
+            $"WITH {ctes} {toSQL selectWithCTE.Select}"
+
+        | SelectIntersect select ->
+            select |> List.map (fun s -> toSQL (Select s)) |> String.concat " INTERSECT "
+        | SelectUnion select ->
+            select |> List.map (fun s -> toSQL (Select s)) |> String.concat " UNION "
 
         | Insert insert ->
             let vals =
@@ -102,7 +122,7 @@ let GenerateSQL (statement: Statement) =
             $"INSERT INTO %s{Table.toString insert.Table} (%s{cols}) VALUES %s{vals} %s{generateReturning insert.Returning}"
 
         | Delete delete ->
-            $"DELETE FROM {Table.toString delete.Table} WHERE {convertWhere delete.Where}"
+            $"DELETE FROM {Table.toString delete.Table} {convertWhere delete.Where}"
 
         | Update update ->
             let set =
@@ -114,7 +134,7 @@ let GenerateSQL (statement: Statement) =
                 )
                 |> String.concat ","
 
-            $"UPDATE %s{Table.toString update.Table} SET %s{set} WHERE %s{convertWhere update.Where} %s{generateReturning update.Returning}"
+            $"UPDATE %s{Table.toString update.Table} SET %s{set} %s{convertWhere update.Where} %s{generateReturning update.Returning}"
         | Savepoint name -> $@"SAVEPOINT ""%s{name}"""
         | SavepointRelease name -> $@"RELEASE SAVEPOINT ""%s{name}"""
         | SavepointRollback name -> $@"ROLLBACK TO SAVEPOINT ""%s{name}"""

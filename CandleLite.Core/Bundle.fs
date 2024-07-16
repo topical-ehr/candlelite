@@ -21,12 +21,18 @@ type BundleResponse =
         Outcome: JSON.IJsonElement option
     }
 
+type BundleSearchMode = Match | Include
+type BundleSearch = {
+    Mode: BundleSearchMode
+}
+
 type BundleEntry =
     {
         FullUrl: string option
         Resource: JSON.IJsonElement option
         Request: BundleRequest option
         Response: BundleResponse option
+        Search:  BundleSearch option
     }
 
 type Bundle =
