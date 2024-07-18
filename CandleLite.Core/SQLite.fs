@@ -64,6 +64,8 @@ let GenerateSQL (statement: Statement) =
                         + (
                             match cond.Condition with
                             | Equal v -> $" = {newParam <| valueToObj v}"
+                            | StartsWith (StringValue s) -> $""" LIKE {StringValue (s + "%") |> valueToObj |> newParam}"""
+                            | StartsWith (IntValue _) -> exn "StartsWith(IntValue) is invalid" |> raise
                             | InSubquery x -> $" IN ({toSQL <| Select x})"
                             | InCTE cteName -> $" IN {cteName}"
                         )

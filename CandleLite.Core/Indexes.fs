@@ -9,6 +9,7 @@ type Type =
     | Reference
     | DateTime
     | String
+    | StringFuzzy // for parameters like "name" that can match on prefixes/typos/etc
     | Bool
     | Token
 
@@ -178,7 +179,7 @@ let indexAddress path =
 
 let humanName path =
     {
-        Type = Type.String
+        Type = Type.StringFuzzy
         Indexer =
             fun elt ->
                 elt.GetElements path

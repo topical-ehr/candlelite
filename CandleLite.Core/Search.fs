@@ -46,6 +46,9 @@ let conditionsForParam
     | Type.String -> 
         IndexConditions.valueEqual resourceType p.Name (p.Value.ToLower())
 
+    | Type.StringFuzzy -> 
+        IndexConditions.startsWith resourceType p.Name (p.Value.ToLower())
+
     | Type.Token ->
         match p.Value.Split("|") with
         | [| code |] ->
@@ -168,7 +171,7 @@ let makeSearchSQL conditions includes =
                     Where = [ { Column = "versionId"; Condition = InCTE "searchVersionIds" } ]
                     Order = []
                 }
-                for i = 0 to List.length includes do
+                for i = 0 to (List.length includes) - 1 do
                     {
                         Columns = ["'include'"; "json"; "deleted"]
                         From = Table.Versions

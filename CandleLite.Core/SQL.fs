@@ -33,6 +33,7 @@ type ColumnUpdateValue = { Column: string; Value: UpdateValue }
 
 type Condition =
     | Equal of Value
+    | StartsWith of Value
     | InSubquery of Select
     | InCTE of string
 
@@ -114,17 +115,19 @@ module IndexConditions =
             Condition = Equal(StringValue(_type + "." + name))
         }
 
-    let private columnEqual column _type name value =
+    let private column op column _type name value =
         [
             nameColumn _type name
             {
                 Column = column
-                Condition = Equal(StringValue value)
+                Condition = op(StringValue value)
             }
         ]
 
-    let valueEqual = columnEqual "value"
-    let systemEqual = columnEqual "system"
+    let valueEqual = column Equal "value"
+    let systemEqual = column Equal "system"
+
+    let startsWith = column StartsWith "value"
 
     let _id (id: TypeId) =
         valueEqual id.Type "_id" id.Id
