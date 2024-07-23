@@ -4,12 +4,26 @@ open CandleLite.Core.Indexes
 
 let parameters =
     [
-        "ALL", [ indexId ]
+        "ALL",
+        [
+            indexId
+            identifier
+        ]
+
+        "CareTeam",
+        [
+            "status", indexString [ "status" ]
+            "category", codeableConcept "category"
+            "name", indexString [ "name" ]
+
+            reference "encounter"
+            reference "subject"
+
+            referenceWithPath "participant" ["participant"; "member"]
+        ]
 
         "Patient",
         [
-            identifier
-
             "active", indexBool [ "active" ]
             "birthdate", indexString [ "birthDate" ]
             "gender", indexString [ "gender" ]
@@ -28,8 +42,6 @@ let parameters =
 
         "Practitioner",
         [
-            identifier
-
             "active", indexBool [ "active" ]
             "birthdate", indexString [ "birthDate" ]
             "gender", indexString [ "gender" ]
@@ -48,7 +60,6 @@ let parameters =
 
         "PractitionerRole",
         [
-            identifier
             "active", indexBool [ "active" ]
 
             reference "practitioner"
@@ -61,8 +72,6 @@ let parameters =
 
         "Composition",
         [
-            identifier
-
             "type", codeableConcept "type"
             "category", codeableConcept "category"
             "status", indexString ["status"]
@@ -73,8 +82,6 @@ let parameters =
 
         "Condition",
         [
-            identifier
-
             "code", codeableConcept "code"
             "category", codeableConcept "category"
             "verification-status", codeableConcept "verificationStatus"
@@ -86,8 +93,6 @@ let parameters =
 
         "DiagnosticReport",
         [
-            identifier
-
             "code", codeableConcept "code"
             "category", codeableConcept "category"
             "status", indexString [ "status" ]
@@ -98,8 +103,6 @@ let parameters =
 
         "Encounter",
         [
-            identifier
-
             "status", indexString [ "status" ]
             "class", indexString [ "class" ]
 
@@ -112,8 +115,6 @@ let parameters =
 
         "List",
         [
-            identifier
-
             "code", codeableConcept "code"
             "category", codeableConcept "category"
 
@@ -124,8 +125,6 @@ let parameters =
 
         "MedicationAdministration",
         [
-            identifier
-
             "category", codeableConcept "category"
             "status", indexString ["status"]
 
@@ -135,8 +134,6 @@ let parameters =
 
         "MedicationRequest",
         [
-            identifier
-
             "category", codeableConcept "category"
             "status", indexString ["status"]
 
@@ -146,7 +143,6 @@ let parameters =
 
         "Observation",
         [
-            identifier
             "code", codeableConcept "code"
             reference "encounter"
             reference "subject"
@@ -154,15 +150,12 @@ let parameters =
 
         "Organization",
         [
-            identifier
-
             "active", indexBool [ "active" ]
         ]
 
 
         "ServiceRequest",
         [
-            identifier
             "code", codeableConcept "code"
             "category", codeableConcept "category"
             reference "encounter"
@@ -171,11 +164,72 @@ let parameters =
 
         "Task",
         [
-            identifier
             "code", codeableConcept "code"
             reference "encounter"
-            referenceWithNameAndProperty "subject" "for"
+            referenceWithPath "subject" ["for"]
         ]
     ]
+
+(*
+As CSV:
+
+Resource,Parameter,Type,paths
+ALL,id
+ALL,identifier
+Patient,active,bool,active
+Patient,birthdate,string,birthDate
+Patient,gender,string,gender
+Patient,death-date,datetime,deceasedDateTime
+Patient,deceased,trueOrDateExists,deceased
+Patient,email,contactPoints,email,telecom
+Patient,phone,contactPoints,phone,telecom
+Patient,telecom,contactPoints,any,telecom
+Patient,address,address,address
+Patient,given,strings,name,given
+Patient,family,strings,name,family
+Patient,name,humanName,name
+
+*)
+
+let fromCSV (text: string) : ParametersMap =
+
+    let toParameter fields =
+        let resource = List.head fields
+        
+        let param =
+            match List.tail fields with
+            | ["id"] -> indexId
+            | ["identifier"] -> identifier
+            | name :: "address" :: path -> name, indexAddress path
+            | name :: "bool" :: path -> name, indexBool path
+            | name :: "codeableConcept" :: path :: [] -> name, codeableConcept path
+            | name :: "contactPoints" :: "any" :: path -> name, contactPoints path None
+            | name :: "contactPoints" :: systemFilter :: path -> name, contactPoints path (Some systemFilter)
+            | name :: "datetime" :: path -> name, indexDateTime path
+            | name :: "string" :: path -> name, indexString path
+            | name :: "strings" :: path -> name, indexStrings path
+            | name :: "reference" :: [] -> reference name
+            | name :: "reference" :: path -> referenceWithPath name path
+            | name :: "trueOrDateExists" :: path :: [] -> name, indexTrueOrDateExists path
+            | _ -> failwithf "unable to parse search parameter spec: %A" fields
+
+        resource, param
+
+    text.Split('\n', System.StringSplitOptions.RemoveEmptyEntries)
+    |> Seq.ofArray
+    |> Seq.map (fun line -> line.Trim())
+
+    // skip CSV header and comments
+    |> Seq.filter (fun line -> not <| (line.StartsWith "#" || line.StartsWith "Resource" || line.Length = 0))
+
+    // parse row
+    |> Seq.map (fun line -> line.Replace(" ", "").Split(',') |> List.ofArray)
+    |> Seq.map toParameter
+
+    // group by ResourceType
+    |> Seq.groupBy fst
+    |> Seq.map (fun (k, v) -> (k, v |> Seq.map snd |> List.ofSeq ))
+    |> Map.ofSeq
+
 
 let defaultParametersMap: ParametersMap = parameters |> Map.ofList

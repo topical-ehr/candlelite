@@ -103,8 +103,8 @@ let getReference name (elt: JSON.IJsonElement) =
 let reference name =
     name, indexer Type.Reference <| (getElements [ name ] >> (List.collect (getReference name)))
 
-let referenceWithNameAndProperty name property =
-    name, indexer Type.Reference <| (getElements [ property ] >> (List.collect (getReference name)))
+let referenceWithPath name elementPath =
+    name, indexer Type.Reference <| (getElements elementPath >> (List.collect (getReference name)))
 
 let codeableConcept name =
     indexer Type.Token <| (getElements [ name; "coding" ] >> (List.map (getSystemCode)))

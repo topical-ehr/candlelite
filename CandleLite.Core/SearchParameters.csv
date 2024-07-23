@@ -1,0 +1,9 @@
+Resource,Parameter,Type,paths
+ALL,_id
+Patient,identifier
+Patient,active,bool,active
+Patient,birthdate,string,birthDate
+Patient,gender,string,gender
+Patient,death-date,datetime,deceasedDateTime
+Patient,deceased,trueOrDateExists,deceased
+Patient,email,contactPoints,telecom,email
