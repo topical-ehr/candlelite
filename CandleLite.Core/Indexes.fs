@@ -51,7 +51,10 @@ type SearchParameter =
 
 type ResourceTypeOrALL = string
 type ParameterName = string
-type ParametersMap = Map<ResourceTypeOrALL, list<ParameterName * SearchParameter>>
+
+// Making ParametersMap a wrapper DU to make it visible from C#
+// Otherwise one has to write FSharpMap<....>
+type ParametersMap = ParametersMap of Map<ResourceTypeOrALL, list<ParameterName * SearchParameter>>
 
 let indexer _type func = { Type = _type; Indexer = func }
 
@@ -204,7 +207,7 @@ let deleteIndexForVersion (versionId: string) =
         }
 
 let indexResource
-    (paramsMap: ParametersMap)
+    (ParametersMap paramsMap)
     (resource: JSON.IJsonElement)
     (id: TypeId)
     (meta: JSON.MetaInfo)

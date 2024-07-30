@@ -117,7 +117,8 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         respondWith status (jsonImpl.ParseJSON json) json
 
     let ensureTypeSupported _type =
-        if not <| Map.containsKey _type config.SearchParameters then
+        let (Indexes.ParametersMap searchParams) = config.SearchParameters
+        if not <| Map.containsKey _type searchParams then
             raiseOO 404 Not_Supported <| sprintf "resource type not supported (%s)" _type
 
     let read _type _id req =

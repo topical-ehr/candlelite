@@ -2,7 +2,7 @@ module CandleLite.Core.SearchParameters
 
 open CandleLite.Core.Indexes
 
-let parameters =
+let defaultParameters =
     [
         "ALL",
         [
@@ -230,6 +230,7 @@ let fromCSV (text: string) : ParametersMap =
     |> Seq.groupBy fst
     |> Seq.map (fun (k, v) -> (k, v |> Seq.map snd |> List.ofSeq ))
     |> Map.ofSeq
+    |> ParametersMap
 
 
-let defaultParametersMap: ParametersMap = parameters |> Map.ofList
+let defaultParametersMap: ParametersMap = defaultParameters |> Map.ofList |> ParametersMap

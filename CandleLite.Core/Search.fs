@@ -93,7 +93,7 @@ let includesFromURL
 
 
 let conditionsFromUrl
-    (paramsMap: ParametersMap)
+    (ParametersMap paramsMap)
     (_type: string)
     (parameters: FhirParameter array)
     =
