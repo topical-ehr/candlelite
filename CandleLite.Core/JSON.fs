@@ -19,12 +19,7 @@ type MetaInfo =
     {
         VersionId: string
         LastUpdated: string
-    }
-
-let metaInfo (elt: IJsonElement) =
-    {
-        VersionId = elt.GetString [ "meta"; "versionId" ]
-        LastUpdated = elt.GetString [ "meta"; "lastUpdated" ]
+        LastUpdatedUnixTime: int64
     }
 
 let resourceType (elt: IJsonElement) =

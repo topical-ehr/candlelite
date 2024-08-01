@@ -4,7 +4,6 @@ open CandleLite.Core.SQL
 
 let schema =
     """
-
 CREATE TABLE versions (
     versionId   INTEGER PRIMARY KEY,
     type        TEXT NOT NULL,
@@ -17,6 +16,7 @@ CREATE INDEX version_history_by_type_id ON versions (type, id);
 CREATE INDEX version_history_by_type    ON versions (type, lastUpdated);
 CREATE INDEX version_history_all        ON versions (lastUpdated);
 
+
 CREATE TABLE indexes (
     name      TEXT NOT NULL,    -- index name, e.g. Patient._id
     
@@ -24,8 +24,9 @@ CREATE TABLE indexes (
     system    BLOB,             -- includes system field for codes (optional)
     isRef     TINYINT,          -- whether the value is a reference to another resource
 
-    id        TEXT  NOT NULL,   -- resource id for chained searches
-    versionId INTEGER NOT NULL  -- version id for getting the latest JSON
+    lastUpdated INTEGER NOT NULL, -- for faster _lastUpdated searches
+    id          TEXT  NOT NULL,   -- resource id for chained searches
+    versionId   INTEGER NOT NULL  -- version id for getting the latest JSON
 );
 CREATE INDEX index_value        ON indexes (name, value, versionId); -- versionId included for cover
 CREATE INDEX index_system_value ON indexes (name, system, value, versionId) WHERE system IS NOT NULL; -- for searches including the system

@@ -233,7 +233,15 @@ let indexResource
         Insert
             {
                 Table = Table.indexes
-                Columns = [ "name"; "value"; "system"; "isRef"; "id"; "versionId" ]
+                Columns = [
+                    "name"
+                    "value"
+                    "system"
+                    "isRef"
+                    "id"
+                    "versionId"
+                    "lastUpdated"
+                ]
                 Values =
                     [
                         for name, rows in allRows do
@@ -251,12 +259,28 @@ let indexResource
                                 let (v, sys, isRef) = indexRow.ToValueAndSystemAndIsRef()
 
                                 if v <> null then
-                                    [ boxedName; v; sys; isRef; id.Id; versionId ]
+                                    [
+                                        boxedName
+                                        v
+                                        sys
+                                        isRef
+                                        id.Id
+                                        versionId
+                                        meta.LastUpdatedUnixTime
+                                    ]
 
                         // add unindexed references to enforce referential integrity
                         // (i.e. prevent deletion of the referenced resources)
                         for ref in references do
-                            [ box "ref"; ref; null; 1; id.Id; versionId ]
+                            [
+                                box "ref"
+                                ref
+                                null
+                                1
+                                id.Id
+                                versionId
+                                meta.LastUpdatedUnixTime
+                            ]
 
                     ]
                 Returning = []

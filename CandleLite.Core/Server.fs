@@ -48,7 +48,13 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
     let runCommand = dbImpl.RunSql >> ignore
 
     let currentTimestamp () =
-        config.CurrentDateTime.ToUniversalTime().ToString("o")
+        let dt = config.CurrentDateTime.ToUniversalTime()
+        let dto = System.DateTimeOffset(dt)
+        {|
+            // get unix time of DateTime
+            UnixTime = dto.ToUnixTimeMilliseconds()
+            ISO8601 = dto.ToString("o")
+        |}
 
     let nextCounter name =
         let results = SQL.updateCounter name |> runQuery
@@ -164,7 +170,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 ResourceType = "Bundle"
                 Total = results.Length |> Some
                 Type = BundleType.History
-                Timestamp = currentTimestamp() |> Some
+                Timestamp = currentTimestamp().ISO8601 |> Some
                 Link = None
                 Entry =
                     Some [|
@@ -241,7 +247,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 ResourceType = "Bundle"
                 Total = Some total
                 Type = BundleType.SearchSet
-                Timestamp = currentTimestamp () |> Some
+                Timestamp = currentTimestamp().ISO8601 |> Some
                 Link = None
                 Entry =
                     Some [|
@@ -286,11 +292,12 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         ])
 
         resource.SetString([ "meta"; "versionId" ], newVersionId)
-        resource.SetString([ "meta"; "lastUpdated" ], newLastUpdated)
+        resource.SetString([ "meta"; "lastUpdated" ], newLastUpdated.ISO8601)
 
         {
             JSON.VersionId = newVersionId
-            JSON.LastUpdated = newLastUpdated
+            JSON.LastUpdated = newLastUpdated.ISO8601
+            JSON.LastUpdatedUnixTime = newLastUpdated.UnixTime
         }
 
     /// Raise exception if the given Type/Id is deleted or doesn't exist
@@ -402,7 +409,8 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 let meta =
                     {
                         JSON.VersionId = newVersionId
-                        JSON.LastUpdated = newLastUpdated
+                        JSON.LastUpdated = newLastUpdated.ISO8601
+                        JSON.LastUpdatedUnixTime = newLastUpdated.UnixTime
                     }
 
                 SQL.insertDeletion typeId meta |> runCommand
@@ -769,7 +777,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                     ResourceType = "Bundle"
                     Total = Some entries.Length
                     Type = bundle.Type + "-response"
-                    Timestamp = currentTimestamp () |> Some
+                    Timestamp = currentTimestamp().ISO8601 |> Some
                     Link = None
                     Entry =
                         responseEntries
@@ -855,8 +863,11 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                     | "DELETE" -> DELETE req
                     | _ -> raiseOO 405 Value "method not allowed"
 
-                for name, v in
-                    [  "ETag", res.ETag;  "Location", res.Location; "Last-Modified", res.LastUpdated] do
+                for name, v in [
+                        "ETag", res.ETag
+                        "Location", res.Location
+                        "Last-Modified", res.LastUpdated
+                    ] do
                     v |> Option.iter (fun v -> setHeader.Invoke(name, v))
 
                 res

@@ -60,12 +60,13 @@ let respondWith status bodyResource bodyString =
         LastUpdated = None
     }
 
-let addETagAndLastUpdated resource response =
-    let metaInfo = JSON.metaInfo resource
+let addETagAndLastUpdated (resource: JSON.IJsonElement) response =
+    let VersionId = resource.GetString [ "meta"; "versionId" ]
+    let LastUpdated = resource.GetString [ "meta"; "lastUpdated" ]
 
     { response with
-        ETag = Some $"W/\"{metaInfo.VersionId}\""
-        LastUpdated = Some(metaInfo.LastUpdated)
+        ETag = Some $"W/\"{VersionId}\""
+        LastUpdated = Some(LastUpdated)
     }
 
 let addLocation (id: TypeId) (meta: JSON.MetaInfo) response =
