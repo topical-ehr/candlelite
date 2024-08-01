@@ -45,8 +45,6 @@ let defaultParameters =
             "active", indexBool [ "active" ]
             "birthdate", indexString [ "birthDate" ]
             "gender", indexString [ "gender" ]
-            "death-date", indexDateTime [ "deceasedDateTime" ]
-            "deceased", indexTrueOrDateExists "deceased"
 
             "email", contactPoints [ "telecom" ] (Some "email")
             "phone", contactPoints [ "telecom" ] (Some "phone")
@@ -170,26 +168,6 @@ let defaultParameters =
         ]
     ]
 
-(*
-As CSV:
-
-Resource,Parameter,Type,paths
-ALL,id
-ALL,identifier
-Patient,active,bool,active
-Patient,birthdate,string,birthDate
-Patient,gender,string,gender
-Patient,death-date,datetime,deceasedDateTime
-Patient,deceased,trueOrDateExists,deceased
-Patient,email,contactPoints,email,telecom
-Patient,phone,contactPoints,phone,telecom
-Patient,telecom,contactPoints,any,telecom
-Patient,address,address,address
-Patient,given,strings,name,given
-Patient,family,strings,name,family
-Patient,name,humanName,name
-
-*)
 
 let fromCSV (text: string) : ParametersMap =
 
@@ -201,11 +179,15 @@ let fromCSV (text: string) : ParametersMap =
             | ["id"] -> indexId
             | ["identifier"] -> identifier
             | name :: "address" :: path -> name, indexAddress path
+            | name :: "bool" :: [] -> name, indexBool [name]
             | name :: "bool" :: path -> name, indexBool path
+            | name :: "codeableConcept" :: [] -> name, codeableConcept name
             | name :: "codeableConcept" :: path :: [] -> name, codeableConcept path
             | name :: "contactPoints" :: "any" :: path -> name, contactPoints path None
             | name :: "contactPoints" :: systemFilter :: path -> name, contactPoints path (Some systemFilter)
             | name :: "datetime" :: path -> name, indexDateTime path
+            | name :: "humanName" :: [] -> name, humanName [name]
+            | name :: "string" :: [] -> name, indexString [name]
             | name :: "string" :: path -> name, indexString path
             | name :: "strings" :: path -> name, indexStrings path
             | name :: "reference" :: [] -> reference name
