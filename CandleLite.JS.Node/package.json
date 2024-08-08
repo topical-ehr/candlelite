@@ -1,0 +1,19 @@
+{
+    "name": "candlelite.js.node",
+    "type": "module",
+    "version": "0.0.1",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [
+        "fhir",
+        "fhir-server"
+    ],
+    "dependencies": {
+        "@sqlite.org/sqlite-wasm": "github:sqlite/sqlite-wasm#node"
+    },
+    "author": "",
+    "license": "MIT"
+}
