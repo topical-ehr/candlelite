@@ -12,7 +12,7 @@
     <ProjectReference Include="..\CandleLite.Core\CandleLite.Core.fsproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Fable.Core" Version="4.0.0-theta-007" />
-    <PackageReference Include="Thoth.Json" Version="9.0.0" />
+    <PackageReference Include="Fable.Core" Version="4.3.0" />
+    <PackageReference Include="Thoth.Json" Version="9.1.0" />
   </ItemGroup>
 </Project>
