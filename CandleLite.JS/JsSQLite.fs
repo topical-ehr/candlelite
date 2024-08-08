@@ -72,6 +72,11 @@ type JsSQLiteImpl(db: obj, sqlite3: ISQLite3) =
                     "error" => exn
                 ])
                 JS.debugger()
+                if exn.Message.Contains("table indexes has no column named lastUpdated") then
+                    db?exec(Sqlite.migration_add_lastUpdated_column) |> ignore
+                    (this :> ICandleLiteDB).RunSql statement |> ignore
+
+                reraise()
 
             resultRows
 
