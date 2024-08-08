@@ -7,7 +7,9 @@ open System.Text.Json.Serialization
 
 open CandleLite.Core
 open CandleLite.Core.Types
+open CandleLite.Core.Bundle
 
+/// Implements CandleLite's required JSON operations using .NET's System.Text.Json
 type JsonViaJsonNode(root: JsonNode) =
 
     do
@@ -123,10 +125,27 @@ type SerializationConverter() =
     override _.Write(writer, value, options) =
         (value :?> JsonViaJsonNode).Node.WriteTo writer
 
+/// Converter for BundleSearchMode because System.Text.Json doesn't yet support Discriminated Unions
+type BundleSearchModeConverter() =
+    inherit JsonConverter<Bundle.BundleSearchMode>()
+
+    override _.CanConvert t =
+        t = typeof<BundleSearchMode>
+
+    override _.Write(writer, value, _options) =
+        writer.WriteStringValue (value.ToString().ToLowerInvariant())
+
+    override _.Read(reader, _t, _options) =
+        match reader.GetString() with
+        | "match" -> Match
+        | "include" -> Include
+        | str -> sprintf "Unexpected value when reading BundleSearchMode: %s" str |> JsonException |> raise
+
 
 type DotNetJSON(?indent: bool) =
     let opts = JsonSerializerOptions()
     do opts.Converters.Add(SerializationConverter())
+    do opts.Converters.Add(BundleSearchModeConverter())
     do opts.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
     do opts.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
     do opts.WriteIndented <- defaultArg indent false
