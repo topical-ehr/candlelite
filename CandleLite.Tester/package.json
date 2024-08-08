@@ -1,0 +1,19 @@
+{
+  "name": "candlelite.tester",
+  "version": "0.0.1",
+  "description": "FHIR Tests",
+  "main": "index.js",
+  "devDependencies": {
+    "@vitest/ui": "^2.0.5",
+    "vitest": "^2.0.5"
+  },
+  "scripts": {
+    "test": "vitest"
+  },
+  "keywords": [
+    "fhir",
+    "testing"
+  ],
+  "author": "",
+  "license": "MIT"
+}

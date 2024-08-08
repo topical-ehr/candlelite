@@ -75,7 +75,7 @@ type DotNetSQLiteImpl(connectionString: string) =
                             System.DBNull.Value
 
                     cmd.Parameters.AddWithValue(name, withDbNull) |> ignore
-                    printfn "  %s -> %A" name withDbNull
+                    // printfn "  %s -> %A" name withDbNull
 
                 use reader = cmd.ExecuteReader()
                 log.Trace("executing query", [
@@ -88,7 +88,7 @@ type DotNetSQLiteImpl(connectionString: string) =
                 while reader.Read() do
                     let values = Array.create reader.FieldCount null
                     reader.GetValues values |> ignore
-                    //printfn "  row: %A" values
+                    // printfn "  row: %A" values
                     yield values
             }
 
