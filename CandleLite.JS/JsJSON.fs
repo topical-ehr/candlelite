@@ -163,7 +163,7 @@ type JsJSON(?indent: bool) =
 
                 createObj [
                     "fullUrl" ==> entry.FullUrl
-                    "resource" ==> resource
+                    "resource" ==> if resource <> null then resource else JS.undefined
                     "request" ==> (Option.map encodeRequest entry.Request |> Option.defaultValue JS.undefined)
                     "response" ==> (Option.map encodeResponse entry.Response |> Option.defaultValue JS.undefined)
                     match entry.Search with
