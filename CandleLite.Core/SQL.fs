@@ -33,7 +33,9 @@ type ColumnUpdateValue = { Column: string; Value: UpdateValue }
 
 type Condition =
     | Equal of Value
-    | StartsWith of Value
+    | StartsWith of string
+    | GreaterThan of int64
+    | LessThan of int64
     | InSubquery of Select
     | InCTE of string
 
@@ -115,17 +117,20 @@ module IndexConditions =
             Condition = Equal(StringValue(_type + "." + name))
         }
 
-    let private column op column _type name value =
+    let private column op col _type name value =
         [
             nameColumn _type name
             {
-                Column = column
-                Condition = op(StringValue value)
+                Column = col
+                Condition = op value 
             }
         ]
 
-    let valueEqual = column Equal "value"
-    let systemEqual = column Equal "system"
+    let private stringColumn op col _type name value =
+        column op col _type name (StringValue value)
+
+    let valueEqual = stringColumn Equal "value"
+    let systemEqual = stringColumn Equal "system"
 
     let startsWith = column StartsWith "value"
 
@@ -134,6 +139,12 @@ module IndexConditions =
 
     let _type (_type: string) =
         [ nameColumn _type "_id" ]
+
+    let lastUpdated condition =
+        {
+            Column = "lastUpdated"
+            Condition = condition
+        }
 
 let indexSubquery condition =
     InSubquery

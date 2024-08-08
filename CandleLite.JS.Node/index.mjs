@@ -28,7 +28,7 @@ sqlite3InitModule({
 
     const config = {
         SearchParameters: defaultParametersMap,
-        CurrentDateTime: new Date(),
+        CurrentDateTime: () => new Date(),
     };
 
     const server = new CandleLiteServer(config, dbImpl, new JsJSON(true));

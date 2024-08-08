@@ -4,6 +4,7 @@
   "description": "FHIR Tests",
   "main": "index.js",
   "devDependencies": {
+    "@types/node": "^22.1.0",
     "@vitest/ui": "^2.0.5",
     "vitest": "^2.0.5"
   },

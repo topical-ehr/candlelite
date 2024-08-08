@@ -8,5 +8,8 @@ class CandleLiteConfig : Server.ICandleLiteConfig
 {
     public Indexes.ParametersMap SearchParameters => Core.SearchParameters.defaultParametersMap;
 
-    public DateTime CurrentDateTime => DateTime.Now;
+    public DateTime CurrentDateTime()
+    {
+        return DateTime.Now;
+    }
 }

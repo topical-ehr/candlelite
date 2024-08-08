@@ -8,7 +8,7 @@ CREATE TABLE versions (
     versionId   INTEGER PRIMARY KEY,
     type        TEXT NOT NULL,
     id          TEXT NOT NULL,      -- text as can be client-assigned
-    lastUpdated TEXT NOT NULL,
+    lastUpdated TEXT NOT NULL,      -- text to make _history a bit faster
     deleted     TINYINT NOT NULL,
     json        TEXT                -- null when deleted
 );
@@ -24,7 +24,7 @@ CREATE TABLE indexes (
     system    BLOB,             -- includes system field for codes (optional)
     isRef     TINYINT,          -- whether the value is a reference to another resource
 
-    lastUpdated INTEGER NOT NULL, -- for faster _lastUpdated searches
+    lastUpdated INTEGER NOT NULL, -- for _lastUpdated searches (unix time in milliseconds)
     id          TEXT  NOT NULL,   -- resource id for chained searches
     versionId   INTEGER NOT NULL  -- version id for getting the latest JSON
 );
@@ -40,6 +40,10 @@ CREATE TABLE sequences (
 ) WITHOUT ROWID;
 
 
+"""
+
+let migration_add_lastUpdated_column = """
+    ALTER TABLE indexes ADD COLUMN lastUpdated INTEGER NOT NULL DEFAULT 0;
 """
 
 let GenerateSQL (statement: Statement) =
@@ -65,8 +69,9 @@ let GenerateSQL (statement: Statement) =
                         + (
                             match cond.Condition with
                             | Equal v -> $" = {newParam <| valueToObj v}"
-                            | StartsWith (StringValue s) -> $""" LIKE {StringValue (s + "%") |> valueToObj |> newParam}"""
-                            | StartsWith (IntValue _) -> exn "StartsWith(IntValue) is invalid" |> raise
+                            | StartsWith str -> $""" LIKE {(str + "%") |> newParam}"""
+                            | GreaterThan num -> $""" > {num |> newParam}"""
+                            | LessThan num -> $""" < {num |> newParam}"""
                             | InSubquery x -> $" IN ({toSQL <| Select x})"
                             | InCTE cteName -> $" IN {cteName}"
                         )

@@ -1,5 +1,7 @@
 module CandleLite.Core.Search
 
+open System
+
 open CandleLite.Core.Indexes
 open CandleLite.Core.Types
 open CandleLite.Core.SQL
@@ -74,68 +76,115 @@ type FhirInclude =
         Parameter: string
     }
 
-let includesFromURL
-    (_type: string)
-    (parameters: FhirParameter array)
-    =
-    [
-        for p in parameters do
-            if p.Name = "_include" then
-                let parts = p.Value.Split(":")
-                match parts with
-                | [| resource; parameter |] ->
-                    { Resource = resource; Parameter = parameter }
-                | _ ->
-                    raiseOO 400 OperationOutcomeCodes.Value (sprintf "invalid/unsupported _include: %s" p.Value)
-            elif p.Name.StartsWith("_") then
-                raiseOO 400 OperationOutcomeCodes.Value (sprintf "unsupported parameter: %s" p.Name)
-    ]
+type DateParameter =
+    {
+        Operator: string
+        Date: DateTimeOffset
+    }
 
+type ParsedParameters =
+    {
+        Includes: FhirInclude list
+        Conditions: list<list<WhereCondition>>
+        LastUpdated: DateParameter option
+    }
 
-let conditionsFromUrl
+let parseUrl
     (ParametersMap paramsMap)
     (_type: string)
     (parameters: FhirParameter array)
     =
 
-    let paramsForType =
-        match Map.tryFind _type paramsMap with
-        | Some list -> list
-        | None -> []
-        
-    let conditions =
-        [
-            for p in parameters do
-                if not <| p.Name.StartsWith('_') then
-                    let searchParam: SearchParameter =
-                        match paramsForType  |> List.tryFind (fun (name,_) -> name = p.Name) with
-                        | Some x -> snd x
-                        | None -> raiseOO 404 Not_Supported (sprintf "search parameter not supported (%s/%s)" _type p.Name)
+    let paramsForType = Map.tryFind _type paramsMap |> Option.defaultValue []
 
-                    conditionsForParam _type searchParam.Type p
-        ]
-        |> Helpers.addTypeClauseIfNeeded _type
-    
-    conditions
+    let initialState = {
+        Includes = []
+        Conditions = []
+        LastUpdated = None
+    }
 
-let makeSearchSQL conditions includes =
+    let results = 
+        (initialState, parameters)
+        ||> Array.fold (fun state p ->
+            if p.Name.StartsWith("_") then
+
+                if p.Name = "_include" then
+                    let parts = p.Value.Split(":")
+                    match parts with
+                    | [| resource; parameter |] ->
+                        let fhirInclude = { Resource = resource; Parameter = parameter }
+                        { state with Includes = fhirInclude :: state.Includes }
+                    | _ ->
+                        raiseOO 400 OperationOutcomeCodes.Value (sprintf "invalid/unsupported _include: %s" p.Value)
+                elif p.Name = "_lastUpdated" then
+                    {
+                        state
+                        with
+                            LastUpdated = Some {
+                                Operator = p.Value.Substring(0, 2)
+                                Date = DateTimeOffset.Parse(p.Value.Substring(2))
+                            }
+                    }
+                else
+                    raiseOO 400 OperationOutcomeCodes.Value (sprintf "unsupported parameter: %s" p.Name)
+
+            else
+                let searchParam: SearchParameter =
+                    match paramsForType  |> List.tryFind (fun (name,_) -> name = p.Name) with
+                    | Some x -> snd x
+                    | None -> raiseOO 404 Not_Supported (sprintf "search parameter not supported (%s/%s)" _type p.Name)
+
+                let conditions = conditionsForParam _type searchParam.Type p
+                { state with Conditions = conditions :: state.Conditions }
+        ) 
+
+    {
+        results
+        with
+            Conditions = Helpers.addTypeClauseIfNeeded _type results.Conditions
+    }
+
+
+let makeSearchSQL (parameters: ParsedParameters) =
+
+    let addLastUpdatedConditions = 
+        match parameters.LastUpdated with
+        | None -> id
+        | Some param ->
+            let date = param.Date
+            let operator = param.Operator
+
+            let condition =
+                match operator with
+                | "gt" -> GreaterThan (date.ToUnixTimeMilliseconds())
+                | "lt" -> LessThan (date.ToUnixTimeMilliseconds())
+                | _ -> raiseOO 400 OperationOutcomeCodes.Value (sprintf "unsupported _lastUpdated operator: %s" operator)
+
+            fun conditions -> conditions @ [ IndexConditions.lastUpdated condition ]
+
     SelectWithCTE
         {
             CTEs = [
                 yield "searchVersionIds", SelectIntersect [
-                    for condition in conditions do
+                    for condition in parameters.Conditions do
                         {
                             Columns = [ "versionId" ]
                             From = Table.indexes
-                            Where = condition
+                            Where = condition |> addLastUpdatedConditions
                             Order = []
                         }
                 ]
-                for (i, {FhirInclude.Resource = resource; Parameter = param}) in Seq.indexed includes do
-                    // e.g. include1_ids AS (
-                    //  select substring(value, 0, instr(value, "/"))||"._id" name,
-                    //       substring(value, instr(value, "/")+1) value
-                    //       from indexes WHERE name = 'Encounter.subject' and versionId = 1675)
+                for (i, {FhirInclude.Resource = resource; Parameter = param}) in Seq.indexed parameters.Includes do
+                    (*
+                        e.g.
+                        include1_ids AS (
+                            SELECT
+                                substring(value, 0, instr(value, "/"))||"._id" name,
+                                substring(value, instr(value, "/")+1) value
+                            FROM indexes
+                            WHERE name = 'Encounter.subject' and versionId = 1675
+                        )
+                    *)
                     yield $"include{i}_ids",
                         Select {
                             Columns = [
@@ -158,8 +207,8 @@ let makeSearchSQL conditions includes =
                     yield $"include{i}_versionIds",
                         Select {
                             Columns = [ "versionId" ]
-                            From = Table.Expression $"""indexes a inner join include{i}_ids b on a.name=b.name and a.value=b.value"""
-                            Where = [ ]
+                            From = Table.Expression $"""indexes a INNER JOIN include{i}_ids b ON a.name=b.name AND a.value=b.value"""
+                            Where = []
                             Order = []
                         }
 
@@ -171,7 +220,7 @@ let makeSearchSQL conditions includes =
                     Where = [ { Column = "versionId"; Condition = InCTE "searchVersionIds" } ]
                     Order = []
                 }
-                for i = 0 to (List.length includes) - 1 do
+                for i = 0 to (List.length parameters.Includes) - 1 do
                     {
                         Columns = ["'include'"; "json"; "deleted"]
                         From = Table.Versions

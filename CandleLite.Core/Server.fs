@@ -25,7 +25,8 @@ type ICandleLiteConfig =
     abstract member SearchParameters: Indexes.ParametersMap
 
     // returns time that's used to set lastUpdated - can be overriden to use a fixed value (e.g. for tests)
-    abstract member CurrentDateTime: System.DateTime
+    abstract member CurrentDateTime: unit -> System.DateTime
+
 
 type ICandleLiteServer =
     // defined as an interface to prevent Fable's name mangling
@@ -48,7 +49,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
     let runCommand = dbImpl.RunSql >> ignore
 
     let currentTimestamp () =
-        let dt = config.CurrentDateTime.ToUniversalTime()
+        let dt = config.CurrentDateTime().ToUniversalTime()
         let dto = System.DateTimeOffset(dt)
         {|
             // get unix time of DateTime
@@ -103,7 +104,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         | 0 -> raiseOO 404 Not_Found "not found"
         | 1 ->
             let json = results[0][0] |> string
-            let deleted = results[0][1] |> unbox<int>
+            let deleted = results[0][1] |> unbox<int64>
 
             if deleted = 1 then
                 raiseOO 410 Deleted "deleted"
@@ -177,10 +178,13 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                         for i, row in results |> Seq.indexed do
                             let versionId = row[0] |> string
                             let lastUpdated = row[1] |> string
-                            let deleted = row[2] :? bool
+                            let deleted = row[2] |> unbox<int64> > 0
                             let json = row[3] |> string
 
-                            let resource = jsonImpl.ParseJSON json
+                            let resource =
+                                match deleted with
+                                | true -> None
+                                | false -> Some <| jsonImpl.ParseJSON json
 
                             let method =
                                 match deleted, i with
@@ -190,7 +194,7 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
 
                             {
                                 FullUrl = fullUrl
-                                Resource = Some resource
+                                Resource = resource
                                 Request = Some <| {
                                         Method = method
                                         Url = if method = "POST" then _type else fullUrl.Value
@@ -229,16 +233,12 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
         ])
         ensureTypeSupported _type
 
-        let includes = Search.includesFromURL _type req.URL.Parameters
-
-        let conditions = Search.conditionsFromUrl config.SearchParameters _type req.URL.Parameters
-
-        let sql = Search.makeSearchSQL conditions includes
-        
+        let parameters = Search.parseUrl config.SearchParameters _type req.URL.Parameters
+        let sql = Search.makeSearchSQL parameters
         let results = runQuery sql
 
         let total =
-            match includes.Length with
+            match parameters.Includes.Length with
             | 0 -> results.Length
             | _ -> results |> List.filter (fun row -> row[0] = "match") |> List.length
 
@@ -788,10 +788,14 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 |> respondWithBundle 200
             with
             | OperationOutcomeException (status, oo) ->
-                SQL.TransactionRollback |> runCommand
+                if isTransaction then
+                    SQL.TransactionRollback |> runCommand
+
                 respondWithOO status oo
             | ex ->
-                SQL.TransactionRollback |> runCommand
+                if isTransaction then
+                    SQL.TransactionRollback |> runCommand
+
                 raiseOO 500 Exception (ex.ToString())
 
 
