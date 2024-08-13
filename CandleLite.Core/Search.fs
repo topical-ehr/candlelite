@@ -76,6 +76,8 @@ type FhirInclude =
         Parameter: string
     }
 
+type SummaryType = Count
+
 type DateParameter =
     {
         Operator: string
@@ -87,6 +89,7 @@ type ParsedParameters =
         Includes: FhirInclude list
         Conditions: list<list<WhereCondition>>
         LastUpdated: DateParameter option
+        Summary: SummaryType option
     }
 
 let parseUrl
@@ -101,6 +104,7 @@ let parseUrl
         Includes = []
         Conditions = []
         LastUpdated = None
+        Summary = None
     }
 
     let results = 
@@ -108,7 +112,8 @@ let parseUrl
         ||> Array.fold (fun state p ->
             if p.Name.StartsWith("_") then
 
-                if p.Name = "_include" then
+                match p.Name with
+                | "_include" ->
                     let parts = p.Value.Split(":")
                     match parts with
                     | [| resource; parameter |] ->
@@ -116,7 +121,7 @@ let parseUrl
                         { state with Includes = fhirInclude :: state.Includes }
                     | _ ->
                         raiseOO 400 OperationOutcomeCodes.Value (sprintf "invalid/unsupported _include: %s" p.Value)
-                elif p.Name = "_lastUpdated" then
+                | "_lastUpdated" ->
                     {
                         state
                         with
@@ -125,8 +130,12 @@ let parseUrl
                                 Date = DateTimeOffset.Parse(p.Value.Substring(2))
                             }
                     }
-                else
-                    raiseOO 400 OperationOutcomeCodes.Value (sprintf "unsupported parameter: %s" p.Name)
+                | "_summary" ->
+                    match p.Value with
+                    | "count" -> { state with Summary = Some Count }
+                    | _ -> raiseOO 400 OperationOutcomeCodes.Value (sprintf "unsupported _summary: %s" p.Value)
+                | name ->
+                    raiseOO 400 OperationOutcomeCodes.Value (sprintf "unsupported parameter: %s" name)
 
             else
                 let searchParam: SearchParameter =

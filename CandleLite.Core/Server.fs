@@ -250,25 +250,28 @@ type CandleLiteServer(config: ICandleLiteConfig, dbImpl: ICandleLiteDB, jsonImpl
                 Timestamp = currentTimestamp().ISO8601 |> Some
                 Link = None
                 Entry =
-                    Some [|
-                        for row in results do
-                            let json = row[1] |> string
-                            let resource = jsonImpl.ParseJSON json
-                            let idFromResource = JSON.resourceId resource
-                            let mode =
-                                match string row[0] with
-                                | "match" -> Match
-                                | "include" -> Include
-                                | _ -> raiseOO 500 Value "invalid search mode in results"
+                    if parameters.Summary = Some Search.SummaryType.Count
+                        then None
+                    else
+                        Some [|
+                            for row in results do
+                                let json = row[1] |> string
+                                let resource = jsonImpl.ParseJSON json
+                                let idFromResource = JSON.resourceId resource
+                                let mode =
+                                    match string row[0] with
+                                    | "match" -> Match
+                                    | "include" -> Include
+                                    | _ -> raiseOO 500 Value "invalid search mode in results"
 
-                            {
-                                FullUrl = Some <| idFromResource.TypeId
-                                Resource = Some resource
-                                Request = None
-                                Response = None
-                                Search = Some { Mode = mode }
-                            }
-                    |]
+                                {
+                                    FullUrl = Some <| idFromResource.TypeId
+                                    Resource = Some resource
+                                    Request = None
+                                    Response = None
+                                    Search = Some { Mode = mode }
+                                }
+                        |]
             }
 
         log.Trace("search results", [

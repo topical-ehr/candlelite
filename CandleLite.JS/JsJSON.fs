@@ -180,13 +180,18 @@ type JsJSON(?indent: bool) =
                     "uri" ==> link.Uri
                 ]
 
+            let mapOrNone func array =
+                array
+                |> Option.map (Array.map func)
+                |> Option.defaultValue JS.undefined
+
             createObj [
                 "resourceType" ==> bundle.ResourceType
                 "type" ==> bundle.Type
                 "total" ==> bundle.Total
                 "timestamp" ==> bundle.Timestamp
-                "link" ==> (bundle.Link |> Option.defaultValue [||] |> Array.map encodeLink)
-                "entry" ==> (bundle.Entry |> Option.defaultValue [||] |> Array.map encodeEntry)
+                "link" ==> (bundle.Link |> mapOrNone encodeLink)
+                "entry" ==> (bundle.Entry |> mapOrNone encodeEntry)
             ] |> toJSON
 
         member _.OutcomeToJSON(oo: OperationOutcome) =

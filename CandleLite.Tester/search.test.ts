@@ -36,8 +36,8 @@ async function pause(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-describe("_lastUpdated searches", () => {
-    test("Search by _lastUpdated", async ({ expect }) => {
+describe("common search parameters", () => {
+    test("_lastUpdated", async ({ expect }) => {
         const familyName = randomString(10);
         const ids1 = await createPatients(10, expect, familyName);
         await pause(10);
@@ -53,6 +53,7 @@ describe("_lastUpdated searches", () => {
         );
         expect(resp1.resourceType).toBe("Bundle");
         expect(resp1.entry.length).toBe(10);
+        expect(resp1.total).toBe(10);
         expect(sortUnique(resp1.entry.map((e) => e.resource.id))).toEqual(
             ids2.sort()
         );
@@ -64,8 +65,38 @@ describe("_lastUpdated searches", () => {
         );
         expect(resp2.resourceType).toBe("Bundle");
         expect(resp2.entry.length).toBe(10);
+        expect(resp2.total).toBe(10);
         expect(sortUnique(resp2.entry.map((e) => e.resource.id))).toEqual(
             ids1.sort()
         );
+    });
+
+    test("_lastUpdated and _summary", async ({ expect }) => {
+        const familyName = randomString(10);
+        const ids1 = await createPatients(10, expect, familyName);
+        await pause(10);
+        const t1 = new Date().toISOString();
+        await pause(10);
+        // console.log(t1);
+        const ids2 = await createPatients(10, expect, familyName);
+
+        // test gt
+        const resp1 = await fhir(
+            "GET",
+            `/Patient?_lastUpdated=gt${t1}&family=${familyName}&_summary=count`
+        );
+        expect(resp1.resourceType).toBe("Bundle");
+        expect(resp1.type).toBe("searchset");
+        expect(resp1.total).toBe(10);
+        expect(resp1.entry).toBeUndefined();
+
+        // test lt
+        const resp2 = await fhir(
+            "GET",
+            `/Patient?_lastUpdated=lt${t1}&family=${familyName}&_summary=count`
+        );
+        expect(resp2.resourceType).toBe("Bundle");
+        expect(resp1.entry).toBeUndefined();
+        expect(resp1.total).toBe(10);
     });
 });
