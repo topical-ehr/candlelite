@@ -10,6 +10,19 @@ let defaultParameters =
             identifier
         ]
 
+        "CarePlan",
+        [
+            "status", indexString [ "status" ]
+            "intent", indexString ["intent"]
+            "category", codeableConcept "category"
+
+            reference "encounter"
+            reference "subject"
+            reference "subject"
+
+            referenceWithPath "performer" ["activity"; "detail"; "performer"]
+        ]
+
         "CareTeam",
         [
             "status", indexString [ "status" ]
